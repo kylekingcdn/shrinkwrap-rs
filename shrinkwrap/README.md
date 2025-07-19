@@ -15,4 +15,4 @@ Rust library to assist in automating the wrapping and merging of data-based stru
 
 ## License
 
-This project is licensed under the [MIT license][license].
+This project is licensed under the [MIT license](LICENSE.md).

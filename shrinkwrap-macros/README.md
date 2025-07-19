@@ -15,4 +15,4 @@ This is the proc macros counterpart library for `shrinkwrap`.
 
 ## License
 
-This project is licensed under the [MIT license][license].
+This project is licensed under the [MIT license](LICENSE.md).
