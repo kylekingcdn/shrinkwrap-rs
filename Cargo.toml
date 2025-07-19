@@ -1,0 +1,4 @@
+[workspace]
+members = ["shrinkwrap", "shrinkwrap-macros", "examples/*"]
+resolver = "2"
+

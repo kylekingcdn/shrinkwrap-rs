@@ -1,0 +1,16 @@
+[package]
+name = "shrinkwrap-macros"
+version = "0.0.1"
+edition = "2024"
+description = "Macros for shrinkwrap"
+categories = ["data-structures", "development-tools", "value-formatting"]
+repository = "https://github.com/kylekingcdn/shrinkwrap-rs"
+readme = "README.md"
+license = "MIT"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+quote = "1.0.40"
+syn = "2.0.104"
