@@ -1,6 +1,6 @@
 [package]
 name = "shrinkwrap"
-version = "0.0.1"
+version = "0.0.2"
 edition = "2024"
 description = "Automates the wrapping and merging of data-based structs with associated metadata and extra information"
 categories = ["data-structures", "development-tools", "value-formatting"]
@@ -10,3 +10,5 @@ license = "MIT"
 [lib]
 
 [dependencies]
+serde = { version = "1.0.219", features = ["derive"] }
+shrinkwrap-macros = { version = "0.0.2", path = "../shrinkwrap-macros" }
