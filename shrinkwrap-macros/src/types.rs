@@ -1,200 +1,302 @@
-#![allow(dead_code)] // temporary
+// #![allow(dead_code)] // temporary
+#![doc="Types used for deserializing derive/attributes via Darling"]
 
 use darling::{FromDeriveInput, FromField, FromMeta};
 use darling::ast::Data;
-use darling::util::{Override, PathList, WithOriginal};
+use darling::util::{Override, PathList};
 use heck::AsTitleCase;
-use syn::Path;
+use syn::{Ident, Path};
+
+// - validate trait
+
+pub(crate) type InvalidityReason = String;
+pub(crate) type HasInvalidity = Option<Vec<InvalidityReason>>;
+
+/// Performs baseline validation of local fields.
+///
+/// Should not perform higher-level validation with other types
+pub(crate) trait ValidateScoped {
+    fn validate_within_scope(&self) -> HasInvalidity;
+}
+
+// - darling types
 
 /// Root derive options
 #[derive(Debug, Clone, FromDeriveInput)]
 #[darling(attributes(shrinkwrap), forward_attrs(allow, doc, cfg), supports(struct_named))]
 pub(crate) struct DeriveItemOpts {
-    ident: syn::Ident,
-    attrs: Vec<syn::Attribute>,
-    data: Data<(), WithOriginal<DataFieldOpts, syn::Field>>,
+    pub ident: Ident,
+    pub data: Data<(), DeriveItemFieldOpts>,
 
     #[darling(default, rename = "wrapper")]
-    wrapper_opts: Option<WrapperOpts>,
-
-    #[darling(default, rename = "data")]
-    data_opts: Option<DataOpts>,
+    pub wrapper_opts: WrapperOpts,
 
     #[darling(default, rename = "extra")]
-    extra_opts: Option<ExtraOpts>,
+    pub extra_opts: ExtraOpts,
 
     #[darling(default, rename = "nest", multiple)]
-    nest_opts: Vec<NestOpts>,
+    pub nest_opts: Vec<NestOpts>,
+}
+impl ValidateScoped for DeriveItemOpts {
+    fn validate_within_scope(&self) -> HasInvalidity {
+        let mut issues = Vec::new();
+        if let Some(new_issues) = self.wrapper_opts.validate_within_scope() {
+            issues.extend(new_issues);
+        }
+        if let Some(new_issues) = self.extra_opts.validate_within_scope() {
+            issues.extend(new_issues);
+        }
+        for nest_group in &self.nest_opts {
+            if let Some(nest_issues) = nest_group.validate_within_scope() {
+                issues.extend(nest_issues);
+            }
+        }
+
+        if issues.is_empty() {
+            None
+        } else {
+            issues.into()
+        } // TODO: field validation
+    }
 }
 
 /// Options for struct wrapper attribute
-///
-/// e.g.
-/// ```ignore
-/// #[shrinkwrap(wrapper(rename = "UserDataWrapper", derive(Debug)))]
-/// pub struct User { /* */ }
-/// ```
-#[derive(Debug, Clone, FromMeta)]
+#[derive(Debug, Clone, Default, FromMeta)]
 pub struct WrapperOpts {
     /// set the parent wrapper struct name - defaults to `{DataStructName}Wrapper`
     rename: Option<String>,
 
     /// Derives to apply to the wrapper struct
     #[darling(default)]
-    derive: PathList,
+    pub derive: PathList,
 
-    /// override the documentation for the generated Wrapper struct
-    doc: Option<String>,
+    /// Sets documentation for the generated Wrapper struct
+    #[darling(default = String::new)]
+    pub doc: String,
+
+    /// Field name for data struct, defaults to data
+    #[darling(default = Self::data_field_name_default)]
+    data_field_name: String,
+
+    /// Sets field-level documentation for data field
+    #[darling(default = String::new)]
+    pub data_field_doc: String,
+
+    /// Serializes data fields inline with the wrapper via `#[serde(flatten)`.
+    ///
+    /// Set to false to disable and retain nesting during serialization.
+    #[darling(default = Self::flatten_data_override_default)]
+    pub flatten_data: Override<bool>,
+
+    /// Field name for extra struct, defaults to data
+    #[darling(default = Self::extra_field_name_default)]
+    extra_field_name: String,
+
+    /// Sets field-level documentation for extra field
+    #[darling(default = String::new)]
+    pub extra_field_doc: String,
 
     // TODO: implement Wrapper::from(Data) if Extra::from(Data) is implemented
     //       (aka all nests implement From<Data>)
 }
 impl WrapperOpts {
-    pub fn resolve_name(&self, data_ident: &syn::Ident) -> syn::Ident {
+    pub fn struct_name_default(data_ident: &Ident) -> Ident {
+        Ident::new(format!("{data_ident}Wrapper").as_str(), data_ident.span())
+    }
+    pub fn struct_name(&self, data_ident: &Ident) -> Ident {
         match &self.rename {
-            Some(name) => {
-                if name.is_empty() {
-                    panic!("Wrapper name cannot be empty")
-                } else {
-                    syn::Ident::new(name, data_ident.span())
-                }
+            Some(name) => Ident::new(name, data_ident.span()),
+            None => Self::struct_name_default(data_ident),
+        }
+    }
+    fn data_field_name_default() -> String {
+        "data".into()
+    }
+    pub fn data_field_name(&self) -> String {
+        if self.data_field_name.is_empty() {
+            Self::data_field_name_default()
+        } else {
+            self.data_field_name.clone()
+        }
+    }
+    fn flatten_data_default() -> bool {
+        true
+    }
+    fn flatten_data_override_default() -> Override<bool> {
+        Some(Self::flatten_data_default()).into()
+    }
+
+    fn extra_field_name_default() -> String {
+        "extra".into()
+    }
+    pub fn extra_field_name(&self) -> String {
+        if self.extra_field_name.is_empty() {
+            Self::extra_field_name_default()
+        } else {
+            self.extra_field_name.clone()
+        }
+    }
+}
+impl ValidateScoped for WrapperOpts {
+    fn validate_within_scope(&self) -> HasInvalidity {
+        let mut issues = Vec::new();
+
+        if let Some(rename) = &self.rename {
+            if rename.is_empty() {
+                issues.push("Wrapper `rename` must have a value when explicitly defined".into());
             }
-            None => {
-                syn::Ident::new(format!("{data_ident}Wrapper").as_str(), data_ident.span())
-            }
+        }
+        if issues.is_empty() {
+            None
+        } else {
+            issues.into()
         }
     }
 }
 
-/// Options for struct data attributes
-///
-/// e.g.
-/// ```ignore
-/// #[shrinkwrap(data(flatten))]
-/// pub struct User { /* */ }
-/// ```
-#[derive(Debug, Clone, FromMeta)]
-pub struct DataOpts {
-    #[darling(default = DataOpts::flatten_override_default)]
-    flatten: Override<bool>,
-}
-impl DataOpts {
-    fn flatten_default() -> bool {
-        true
-    }
-    fn flatten_override_default() -> Override<bool> {
-        Some(Self::flatten_default()).into()
-    }
-}
-
 /// Options for struct extra attribute
-///
-/// e.g.
-/// ```ignore
-/// #[shrinkwrap(extra(rename = "UserTextExtra", field = "extra", derive(Debug)))]
-/// pub struct User { /* */ }
-/// ```
-#[derive(Debug, Clone, FromMeta)]
+#[derive(Debug, Clone, Default, FromMeta)]
 pub struct ExtraOpts {
     /// set the `extra` struct name - defaults to `{DataStructName}Extra`
     rename: Option<String>,
 
     /// Derives to apply to the extra struct
     #[darling(default)]
-    derive: PathList,
+    pub derive: PathList,
 
-    /// override the documentation for the generated Extra struct
-    doc: Option<String>,
+    /// Sets struct-level documentation for the generated Extra struct
+    #[darling(default = String::new)]
+    pub doc: String,
 }
 impl ExtraOpts {
-    pub fn resolve_name(&self, data_ident: &syn::Ident) -> syn::Ident {
+    fn struct_name_default(data_ident: &Ident) -> Ident {
+        Ident::new(format!("{data_ident}Extra").as_str(), data_ident.span())
+    }
+    pub fn struct_name(&self, data_ident: &Ident) -> Ident {
         match &self.rename {
-            Some(name) => {
-                if name.is_empty() {
-                    panic!("Extra struct name cannot be empty")
-                } else {
-                    syn::Ident::new(name, data_ident.span())
-                }
+            Some(name) => Ident::new(name, data_ident.span()),
+            None => Self::struct_name_default(data_ident),
+        }
+    }
+}
+impl ValidateScoped for ExtraOpts {
+    fn validate_within_scope(&self) -> HasInvalidity {
+        let mut issues = Vec::new();
+
+        if let Some(rename) = &self.rename {
+            if rename.is_empty() {
+                issues.push("Extra `rename` must have a value when explicitly defined".into());
             }
-            None => {
-                syn::Ident::new(format!("{data_ident}Extra").as_str(), data_ident.span())
-            }
+        }
+        if issues.is_empty() {
+            None
+        } else {
+            issues.into()
         }
     }
 }
 
 /// Options for struct nest attribute
-///
-/// e.g.
-/// ```ignore
-/// #[shrinkwrap(nest(name = "text", return = "", transform(from | "some::fn")))]`
-/// pub struct User { /* */ }
-/// ```
 #[derive(Debug, Clone, FromMeta)]
 pub struct NestOpts {
     /// used for the nest field key under `data.extra` as well as an identifier for other attributes
-    key: String,
+    pub key: String,
 
     /// sets the name of the nests' generated struct - defaults to `{DataStructName}{titlecased_key}`
     rename: Option<String>,
 
+    /// Derives to apply to the extra struct
+    #[darling(default)]
+    pub derive: PathList,
+
     /// sets the type for the fields in the nested struct
-    field_type: syn::Path,
+    pub field_type: Path,
 
     /// Path to transform function used to convert data struct into nest struct. from can be used to automatically use a `From<&Data>` impl
-    transform: Option<Path>,
+    pub transform: Option<Path>,
 
     /// Derives the transform using an existing `impl From<&Data> for DataNest`
     #[darling(default)]
-    from: bool,
+    pub from: bool,
 
-    /// override the documentation for the generated Nest struct
-    doc: Option<String>,
+    /// Sets the struct-level documentation for the generated Nest struct
+    #[darling(default = String::new)]
+    pub doc: String,
 }
 impl NestOpts {
-    pub fn key_titlecase(&self) -> String {
-        format!("{}", AsTitleCase(&self.key))
+    pub fn build_struct_name_default(data_ident: &Ident, key: &str) -> Ident {
+        let key_titlecase = format!("{}", AsTitleCase(key));
+        Ident::new(format!("{data_ident}Nested{key_titlecase}").as_str(), data_ident.span())
     }
-    pub fn resolve_name(&self, data_ident: &syn::Ident) -> syn::Ident {
+    pub fn struct_name_default(&self, data_ident: &Ident) -> Ident {
+        Self::build_struct_name_default(data_ident, &self.key)
+    }
+    pub fn struct_name(&self, data_ident: &Ident) -> Ident {
         match &self.rename {
-            Some(name) => {
-                if name.is_empty() {
-                    panic!("Nest struct name cannot be empty")
-                } else {
-                    syn::Ident::new(&name, data_ident.span())
-                }
+            Some(name) => Ident::new(name, data_ident.span()),
+            None => self.struct_name_default(data_ident),
+        }
+    }
+}
+impl ValidateScoped for NestOpts {
+    fn validate_within_scope(&self) -> HasInvalidity {
+        let mut issues = Vec::new();
+        if self.key.is_empty() {
+            issues.push("Nest `key` cannot be empty".into());
+        }
+        if let Some(rename) = &self.rename {
+            if rename.is_empty() {
+                issues.push("Nest `rename` must have a value when explicitly defined".into());
             }
-            None => {
-                let default_name = format!("{data_ident}Nested{}", self.key_titlecase());
-                syn::Ident::new(&default_name, data_ident.span())
-            }
+        }
+        // skipping complicated `field_type` path check now as it will be done at higher level validation
+
+        let has_transform = self.transform.is_some();
+        let has_from = self.from == true;
+        if has_transform && has_from {
+            issues.push("Nest attributes `from` and `transform` cannot both be defined in the same nest".into());
+        } else if !has_transform && !has_from {
+            issues.push("Either `from` or `transform` must be defined for a nest".into());
+        }
+
+        if issues.is_empty() {
+            None
+        } else {
+            issues.into()
         }
     }
 }
 
-/// Options for struct field attribute
-///
-/// e.g.
-/// ```ignore
-/// #[shrinkwrap(doc = "", with_nest(nest1, nest2))]`
-/// pub struct User { /* */ }
-/// ```
+/// Options for struct field attributes
 #[derive(Debug, Clone, FromField)]
 #[darling(attributes(shrinkwrap))]
-pub struct DataFieldOpts {
+pub struct DeriveItemFieldOpts {
     /// only None for tuple fields, therefore safe to unwrap
-    ident: Option<syn::Ident>,
-    ty: syn::Type,
+    pub ident: Option<Ident>,
 
-    /// list containing the IDs of nests for which this field should be included/mapped
-    #[darling(default)]
-    with_nest: PathList,
-
-    /// override the field's documentation for this nest
-    doc: Option<String>,
+    #[darling(default, multiple, rename = "nest_in")]
+    pub nest_in_opts: Vec<NestInOpts>,
 }
-impl DataFieldOpts {
-    pub fn check_issues() -> Option<String> {
+impl ValidateScoped for DeriveItemFieldOpts {
+    fn validate_within_scope(&self) -> HasInvalidity {
+        None
+    }
+}
+
+
+/// Wrap field `nest_in` attribute options
+#[derive(Debug, Clone, FromMeta)]
+pub struct NestInOpts {
+    /// Nest key for which this field should be included/mapped
+    #[darling(rename = "key")]
+    pub nest_key: Ident,
+
+    /// Set the field's documentation for this nest
+    #[darling(default = String::new)]
+    pub field_doc: String,
+}
+impl ValidateScoped for NestInOpts {
+    fn validate_within_scope(&self) -> HasInvalidity {
         None
     }
 }
