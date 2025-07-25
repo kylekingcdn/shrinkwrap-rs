@@ -1,6 +1,6 @@
 [package]
 name = "shrinkwrap-macros"
-version = "0.0.2"
+version = "0.0.3"
 edition = "2024"
 description = "Macros for shrinkwrap"
 categories = ["data-structures", "development-tools", "value-formatting"]
