@@ -1,11 +1,15 @@
 # `shrinkwrap`
 
-Rust library to assist in automating the wrapping and merging of data-based structs with associated metadata and extra information.
+`shrinkwrap` is a Rust library to assist in automating the nesting, wrapping, and merging of alternate representations for arbitrary data structs.
+
+E.g, conditionally rendering text/human-readable variants of common data in an API response object (such as: timestamps, numeric precision adjustments, currency exchange rate handling).
 
 ---
 
-> [!CAUTION]
-> This is currently a work-in-progress. The first publish to crates.io was for crate name reservation - it is an empty library.
+> [!WARNING]
+> This is currently a work-in-progress.
+> ---
+> Documentation will be updated shortly.
 
 ## Links
 
