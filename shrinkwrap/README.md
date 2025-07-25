@@ -8,7 +8,6 @@ E.g, conditionally rendering text/human-readable variants of common data in an A
 
 > [!WARNING]
 > This is currently a work-in-progress.
-> ---
 > Documentation will be updated shortly.
 
 ## Links
