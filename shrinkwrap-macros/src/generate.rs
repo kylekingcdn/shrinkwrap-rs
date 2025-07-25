@@ -5,7 +5,7 @@ use syn::Ident;
 mod types;
 
 use types::*;
-use crate::types::{DeriveItemOpts,DeriveItemFieldOpts, NestOpts, WrapperOpts, ExtraOpts};
+use crate::parse::types::{DeriveItemOpts,DeriveItemFieldOpts, NestOpts, WrapperOpts, ExtraOpts};
 
 pub(crate) fn generate_entrypoint(root: DeriveItemOpts) -> proc_macro2::TokenStream {
     let origin_fields = root.data.take_struct().unwrap().fields;

@@ -1,5 +1,5 @@
 mod generate;
-mod types;
+mod parse;
 mod wrap;
 
 use wrap::derive_wrap_impl;

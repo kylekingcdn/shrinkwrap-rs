@@ -4,7 +4,7 @@ use proc_macro::TokenStream;
 use syn::{DeriveInput, parse_macro_input};
 
 use crate::generate::generate_entrypoint;
-use crate::types::{DeriveItemOpts, ValidateScoped};
+use crate::parse::types::{DeriveItemOpts, ValidateScoped};
 
 // -- TODO: use nproc macro error
 

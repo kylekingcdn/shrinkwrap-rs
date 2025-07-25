@@ -1,5 +1,4 @@
-// #![allow(dead_code)] // temporary
-#![doc="Types used for deserializing derive/attributes via Darling"]
+#![doc="Types used for deserializing attributes (via Darling)"]
 
 use darling::{FromDeriveInput, FromField, FromMeta};
 use darling::ast::Data;
