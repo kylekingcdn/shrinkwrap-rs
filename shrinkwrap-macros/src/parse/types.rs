@@ -267,7 +267,7 @@ impl ValidateScoped for NestOpts {
         // skipping complicated `field_type` path check now as it will be done at higher level validation
 
         let has_transform = self.transform.is_some();
-        let has_from = self.from == true;
+        let has_from = self.from;
         if has_transform && has_from {
             issues.push("Nest attributes `from` and `transform` cannot both be defined in the same nest".into());
         } else if !has_transform && !has_from {

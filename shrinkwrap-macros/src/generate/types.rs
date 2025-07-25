@@ -108,7 +108,7 @@ impl ToTokens for Nest {
 
         let mut field_tokens = TokenStream::new();
         for NestField { name, field_doc: field_doc_str } in &self.fields {
-            let field_doc = build_docs_token(&field_doc_str);
+            let field_doc = build_docs_token(field_doc_str);
             field_tokens.extend(quote! {
                 #field_doc
                 pub #name: #field_type,
@@ -152,7 +152,7 @@ pub struct NestField {
 }
 impl PartialEq for NestField {
     fn eq(&self, other: &Self) -> bool {
-        &self.name == &other.name
+        self.name == other.name
     }
 }
 impl Eq for NestField { }

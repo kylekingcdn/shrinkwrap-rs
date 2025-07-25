@@ -1,6 +1,6 @@
 use quote::{quote, ToTokens};
 use std::collections::{HashMap, HashSet};
-use syn::{Ident, Path, Type};
+use syn::{Ident, Type};
 
 mod types;
 
@@ -18,7 +18,7 @@ pub(crate) fn generate_entrypoint(root: DeriveItemOpts) -> proc_macro2::TokenStr
     let nest_keys = &root.nest_opts.iter().map(|n| n.key.clone()).collect();
     let nest_fields = build_nest_fields_map(&origin_fields);
 
-    validate_nests(&nest_fields, &nest_keys);
+    validate_nests(&nest_fields, nest_keys);
 
     let mut output = quote!();
     let DeriveItemOpts { wrapper_opts, extra_opts, nest_opts, ident: data_ident, .. } = root;
@@ -55,7 +55,7 @@ pub(crate) fn generate_wrapper_struct(
     let wrapper = types::Wrapper {
         struct_name,
         struct_docs: doc,
-        derive: derive,
+        derive,
         data_field_name,
         data_struct_name: data_ident.clone(),
         data_field_docs: data_field_doc,
@@ -73,7 +73,7 @@ pub(crate) fn generate_wrapper_struct(
 pub(crate) fn generate_extra_struct(
     opts: ExtraOpts,
     data_ident: &Ident,
-    nests: &Vec<Nest>,
+    nests: &[Nest],
 ) -> proc_macro2::TokenStream {
     let nest_fields = nests.iter().map(|n| (n.key.clone(), n.struct_name.clone())).collect();
     let extra = types::Extra {
@@ -121,7 +121,7 @@ pub(crate) fn generate_trait_impls(
     let mut output = quote!();
 
     if let Some(transform_path) = &transform_metadata.exclusive_transform {
-        output.extend(generate_wrap_with_impl(transform_path, &trait_deps, nests))
+        output.extend(generate_wrap_with_impl(transform_path, trait_deps, nests))
     }
     else if transform_metadata.all_from {
         output.extend(generate_from_for_extra_impl(
@@ -296,7 +296,7 @@ pub(crate) fn generate_nest_structs(
     for nest in nests {
         if let NestTransform::FromImpl { data_ident } = &nest.transform {
             // generate ToNest via from impl
-            impl_output.extend(nest.to_nest_impl(&data_ident));
+            impl_output.extend(nest.to_nest_impl(data_ident));
         }
         output.extend(quote! { #nest });
     }
@@ -321,7 +321,7 @@ pub(crate) fn build_nest_fields_map(origin_fields: &Vec<DeriveItemFieldOpts>) ->
             map.entry(nest_key_name).and_modify(|e: &mut Vec<NestField>| {
                 // check if the nest already contains this field
                 if e.contains(&field) {
-                    panic!("Nest '{}' already contains field: {}", nest_key_ident.to_string(), field_ident.to_string());
+                    panic!("Nest '{nest_key_ident}' already contains field: {field_ident}");
                 } else {
                     e.push(field.clone());
                 }
