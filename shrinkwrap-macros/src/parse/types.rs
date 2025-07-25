@@ -4,7 +4,7 @@ use darling::{FromDeriveInput, FromField, FromMeta};
 use darling::ast::Data;
 use darling::util::{Override, PathList};
 use heck::AsTitleCase;
-use syn::{Ident, Path};
+use syn::{Ident, Path, Type};
 
 // - validate trait
 
@@ -59,6 +59,25 @@ impl ValidateScoped for DeriveItemOpts {
     }
 }
 
+// TODO: add support for nesting of nests (sorry)
+//
+// e.g. a nest would also be a wrapper for subsequent nests.
+// From the client perspective, this is just adding an `extra` object & properties to a nest.
+//
+// Useful for situations where there are layered representations
+// e.g. consider the following 2 nests representing an amount field
+//
+//   ```
+//   amount_in_local_currency -> text
+//   amount_in_local_currency -> usd_value
+//   ```
+//
+// there should certainly be this chain as well.
+//
+// ```
+//   amount_in_local_currency -> usd_value -> text
+// ```
+//
 /// Options for struct wrapper attribute
 #[derive(Debug, Clone, Default, FromMeta)]
 pub struct WrapperOpts {
@@ -94,9 +113,6 @@ pub struct WrapperOpts {
     /// Sets field-level documentation for extra field
     #[darling(default = String::new)]
     pub extra_field_doc: String,
-
-    // TODO: implement Wrapper::from(Data) if Extra::from(Data) is implemented
-    //       (aka all nests implement From<Data>)
 }
 impl WrapperOpts {
     pub fn struct_name_default(data_ident: &Ident) -> Ident {
@@ -159,7 +175,7 @@ pub struct ExtraOpts {
     /// set the `extra` struct name - defaults to `{DataStructName}Extra`
     rename: Option<String>,
 
-    /// Derives to apply to the extra struct
+    /// Derives to apply to the extra struct - Debug, Clone, and serde::Serialize are required and auto-derived
     #[darling(default)]
     pub derive: PathList,
 
@@ -204,15 +220,15 @@ pub struct NestOpts {
     /// sets the name of the nests' generated struct - defaults to `{DataStructName}{titlecased_key}`
     rename: Option<String>,
 
-    /// Derives to apply to the extra struct
+    /// Derives to apply to the nest struct - Debug, Clone, and serde::Serialize are required and auto-derived
     #[darling(default)]
     pub derive: PathList,
 
     /// sets the type for the fields in the nested struct
     pub field_type: Path,
 
-    /// Path to transform function used to convert data struct into nest struct. from can be used to automatically use a `From<&Data>` impl
-    pub transform: Option<Path>,
+    /// Path to transform function used to convert data struct into nest struct.
+    pub transform: Option<Type>,
 
     /// Derives the transform using an existing `impl From<&Data> for DataNest`
     #[darling(default)]

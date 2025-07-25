@@ -1,11 +1,17 @@
 use quote::{quote, ToTokens};
 use std::collections::{HashMap, HashSet};
-use syn::Ident;
+use syn::{Ident, Path, Type};
 
 mod types;
 
 use types::*;
 use crate::parse::types::{DeriveItemOpts,DeriveItemFieldOpts, NestOpts, WrapperOpts, ExtraOpts};
+
+pub(crate) struct TraitDeps {
+    data_struct_name: Ident,
+    extra_struct_name: Ident,
+    wrapper_struct_name: Ident,
+}
 
 pub(crate) fn generate_entrypoint(root: DeriveItemOpts) -> proc_macro2::TokenStream {
     let origin_fields = root.data.take_struct().unwrap().fields;
@@ -17,12 +23,21 @@ pub(crate) fn generate_entrypoint(root: DeriveItemOpts) -> proc_macro2::TokenStr
     let mut output = quote!();
     let DeriveItemOpts { wrapper_opts, extra_opts, nest_opts, ident: data_ident, .. } = root;
     let extra_ident = extra_opts.struct_name(&data_ident);
+    let trait_deps = TraitDeps {
+        data_struct_name: data_ident.clone(),
+        extra_struct_name: extra_ident.clone(),
+        wrapper_struct_name: wrapper_opts.struct_name(&data_ident),
+    };
 
     let nests = generate_nests(nest_opts, &data_ident, nest_fields);
+    let transform_metadata = get_transform_metadata(&nests);
+    let trait_impls = generate_trait_impls(&transform_metadata, &trait_deps, &nests);
+
 
     output.extend(generate_wrapper_struct(wrapper_opts, &data_ident, &extra_ident));
     output.extend(generate_extra_struct(extra_opts, &data_ident, &nests));
     output.extend(generate_nest_structs(nests));
+    output.extend(trait_impls);
 
     output
 }
@@ -74,6 +89,145 @@ pub(crate) fn generate_extra_struct(
     token_stream
 }
 
+pub(crate) fn get_transform_metadata(nests: &Vec<Nest>) -> NestTransformMetadata {
+    let mut from_ct = 0;
+    let mut transform_types = HashSet::new();
+    // derive additional metadata (transform composition)
+    for nest in nests {
+        match &nest.transform {
+            NestTransform::FromImpl { .. } => { from_ct += 1 },
+            NestTransform::Transform { transformer_type: path } => {
+                transform_types.insert(path.clone());
+            }
+        }
+    }
+    let exclusive_transform = if transform_types.len() == 1 && from_ct == 0 {
+        transform_types.iter().next().cloned()
+    } else {
+        None
+    };
+
+    NestTransformMetadata {
+        all_from: from_ct == nests.len(),
+        exclusive_transform,
+    }
+}
+
+pub(crate) fn generate_trait_impls(
+    transform_metadata: &NestTransformMetadata,
+    trait_deps: &TraitDeps,
+    nests: &Vec<Nest>,
+) -> proc_macro2::TokenStream {
+    let mut output = quote!();
+
+    if let Some(transform_path) = &transform_metadata.exclusive_transform {
+        output.extend(generate_wrap_with_impl(transform_path, &trait_deps, nests))
+    }
+    else if transform_metadata.all_from {
+        output.extend(generate_from_for_extra_impl(
+            &trait_deps.data_struct_name, &trait_deps.extra_struct_name, nests
+        ));
+        output.extend(generate_from_for_wrapper_impl(
+            &trait_deps.wrapper_struct_name, &trait_deps.data_struct_name, &trait_deps.extra_struct_name
+        ));
+        output.extend(generate_wrap_impl(
+            &trait_deps.wrapper_struct_name, &trait_deps.data_struct_name
+        ));
+    }
+
+    output
+}
+
+pub(crate) fn generate_wrap_with_impl(
+    transform_path: &Type,
+    trait_deps: &TraitDeps,
+    nests: &Vec<Nest>,
+) -> proc_macro2::TokenStream {
+    let mut nest_field_tokens = quote!();
+
+    for nest in nests {
+        let nest_key = &nest.key;
+        nest_field_tokens.extend(quote! {
+            #nest_key: transform.transform_to_nest(&self),
+        });
+    }
+    let &TraitDeps { data_struct_name, extra_struct_name, wrapper_struct_name } = &trait_deps;
+
+    quote! {
+        impl shrinkwrap::wrap::WrapWith<#transform_path> for #data_struct_name {
+            type Wrapper = #wrapper_struct_name;
+
+            fn to_wrapped_with(self, transform: &#transform_path) -> Self::Wrapper {
+                Self::Wrapper {
+                    extra: #extra_struct_name {
+                        #nest_field_tokens
+                    },
+                    data: self
+                }
+            }
+        }
+    }
+}
+
+pub(crate) fn generate_from_for_extra_impl(
+    data_struct_name: &Ident,
+    extra_struct_name: &Ident,
+    nests: &Vec<Nest>,
+) -> proc_macro2::TokenStream {
+    let mut nest_field_tokens = quote!();
+
+    for nest in nests {
+        let nest_key = &nest.key;
+        let nest_struct = &nest.struct_name;
+
+        nest_field_tokens.extend(quote! {
+            #nest_key: #nest_struct::from(data),
+        });
+    }
+
+    quote! {
+        impl From<&#data_struct_name> for #extra_struct_name {
+            fn from(data: &#data_struct_name) -> Self {
+                Self {
+                    #nest_field_tokens
+                }
+            }
+        }
+    }
+}
+
+pub(crate) fn generate_from_for_wrapper_impl(
+    wrapper_struct_name: &Ident,
+    data_struct_name: &Ident,
+    extra_struct_name: &Ident,
+    // nests: &Vec<Nest>,
+) -> proc_macro2::TokenStream {
+    quote! {
+        impl From<#data_struct_name> for #wrapper_struct_name {
+            fn from(data: #data_struct_name) -> Self {
+                Self {
+                    extra: #extra_struct_name::from(&data),
+                    data,
+                }
+            }
+        }
+    }
+}
+
+pub(crate) fn generate_wrap_impl(
+    wrapper_struct_name: &Ident,
+    data_struct_name: &Ident,
+) -> proc_macro2::TokenStream {
+    quote! {
+        impl shrinkwrap::wrap::Wrap for #data_struct_name {
+            type Wrapper = #wrapper_struct_name;
+            fn to_wrapped(self) -> Self::Wrapper {
+                Self::Wrapper::from(self)
+            }
+        }
+    }
+}
+
 // FIXME: error handling
 pub(crate) fn validate_nests(nest_field_map: &HashMap<String, Vec<NestField>>, declared_nest_keys: &Vec<String>) {
     // store nest names in set, ensure no duplicate nests defined
@@ -108,7 +262,7 @@ pub(crate) fn generate_nests(
             types::NestTransform::FromImpl { data_ident: data_ident.clone() }
         }
         else if let Some(transform) = nest_opts.transform.clone() {
-            types::NestTransform::Transform { path: transform }
+            types::NestTransform::Transform { transformer_type: transform  }
         } else {
             panic!("Either transform or from must be defined for a nest");
         };
@@ -138,9 +292,16 @@ pub(crate) fn generate_nest_structs(
     nests: Vec<Nest>,
 ) -> proc_macro2::TokenStream {
     let mut output = quote! {};
+    let mut impl_output = quote! {};
     for nest in nests {
+        if let NestTransform::FromImpl { data_ident } = &nest.transform {
+            // generate ToNest via from impl
+            impl_output.extend(nest.to_nest_impl(&data_ident));
+        }
         output.extend(quote! { #nest });
     }
+    // appent impl output to struct output
+    output.extend(impl_output);
 
     output
 }

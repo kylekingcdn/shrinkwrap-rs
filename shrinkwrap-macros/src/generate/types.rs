@@ -4,7 +4,7 @@ use darling::util::PathList;
 use darling::ToTokens;
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{Ident, Path};
+use syn::{Ident, Path, Type};
 
 pub struct Wrapper {
     pub struct_name: Ident,
@@ -71,8 +71,6 @@ impl ToTokens for Extra {
             let nest_key = &nest.0;
             let nest_struct = &nest.1;
 
-            // TODO: docs
-
             nest_field_tokens.extend(quote! {
                 pub #nest_key: #nest_struct,
             });
@@ -129,10 +127,22 @@ impl ToTokens for Nest {
         tokens.extend(output);
     }
 }
+impl Nest {
+    pub fn to_nest_impl(&self, data_ident: &Ident) -> TokenStream {
+        let struct_name = &self.struct_name;
+        quote! {
+          impl shrinkwrap::transform::ToNest<#struct_name> for #data_ident {
+              fn to_nest(&self) -> #struct_name {
+                  #struct_name::from(self)
+              }
+          }
+        }
+    }
+}
 
 pub enum NestTransform {
     FromImpl { data_ident: syn::Ident },
-    Transform { path: syn::Path },
+    Transform { transformer_type: syn::Type },
 }
 
 #[derive(Debug, Clone)]
@@ -146,6 +156,13 @@ impl PartialEq for NestField {
     }
 }
 impl Eq for NestField { }
+
+pub struct NestTransformMetadata {
+    /// true if all nests of a struct support From<&Data>
+    pub all_from: bool,
+    /// true if all nests of a struct support transform through the same type
+    pub exclusive_transform: Option<Type>,
+}
 
 fn build_docs_token(doc: &str) -> TokenStream {
     if doc.is_empty() {
