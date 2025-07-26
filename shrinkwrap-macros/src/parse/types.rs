@@ -243,16 +243,19 @@ impl NestOpts {
         let suffix = AsUpperCamelCase(field_name.to_string());
         format_ident!("{suffix}")
     }
-    pub fn build_default_struct_name(origin_ident: &Ident, field_name: &Ident) -> Ident {
+    pub fn build_default_struct_name(origin_ident: &Ident, root_ident: &Ident, field_name: &Ident) -> Ident {
+        // To avoid obnoxiously long struct names, only include the nested keyword once (root nests)
+        let region_descriptor = if origin_ident == root_ident { "Nested" } else { Default::default() };
         let suffix = Self::build_struct_name_suffix(field_name);
-        format_ident!("{origin_ident}Nested{suffix}")
+
+        format_ident!("{origin_ident}{region_descriptor}{suffix}")
     }
     /// `root_ident` is the ident of the top-level data struct containing derive(Wrap)
     /// It is used to form the base struct name when an origin isn't explicitly provided
     pub fn struct_name_default(&self, root_ident: &Ident) -> Ident {
         let origin_ident = self.origin.as_ref().unwrap_or(root_ident);
         let field_name = self.field_name();
-        Self::build_default_struct_name(origin_ident, &field_name)
+        Self::build_default_struct_name(origin_ident, root_ident, &field_name)
     }
     /// `root_ident` is the ident of the top-level data struct containing derive(Wrap)
     /// It is used to form the base struct name when an origin isn't explicitly provided
