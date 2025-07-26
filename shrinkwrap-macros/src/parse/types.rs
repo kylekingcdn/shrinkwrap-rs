@@ -1,11 +1,11 @@
 #![doc = "Types used for deserializing attributes (via Darling)"]
 
-use darling::ast::Data;
+use darling::ast::{Data, NestedMeta};
 use darling::util::{Override, PathList};
-use darling::{FromDeriveInput, FromField, FromMeta};
+use darling::{FromDeriveInput, FromField, FromMeta, FromAttributes};
 use heck::AsUpperCamelCase;
 use quote::format_ident;
-use syn::{Ident, Path, Type};
+use syn::{Attribute, Ident, Path, Type, Meta};
 
 // - validate trait
 
@@ -239,19 +239,20 @@ impl NestOpts {
             None => self.field_name_default(),
         }
     }
-    pub fn build_struct_name_suffix(id: &str) -> Ident {
-        let suffix = AsUpperCamelCase(id);
+    pub fn build_struct_name_suffix(field_name: &Ident) -> Ident {
+        let suffix = AsUpperCamelCase(field_name.to_string());
         format_ident!("{suffix}")
     }
-    pub fn build_default_struct_name(origin_ident: &Ident, id: &str) -> Ident {
-        let suffix = Self::build_struct_name_suffix(id);
+    pub fn build_default_struct_name(origin_ident: &Ident, field_name: &Ident) -> Ident {
+        let suffix = Self::build_struct_name_suffix(field_name);
         format_ident!("{origin_ident}Nested{suffix}")
     }
     /// `root_ident` is the ident of the top-level data struct containing derive(Wrap)
     /// It is used to form the base struct name when an origin isn't explicitly provided
     pub fn struct_name_default(&self, root_ident: &Ident) -> Ident {
         let origin_ident = self.origin.as_ref().unwrap_or(root_ident);
-        Self::build_default_struct_name(origin_ident, &self.id)
+        let field_name = self.field_name();
+        Self::build_default_struct_name(origin_ident, &field_name)
     }
     /// `root_ident` is the ident of the top-level data struct containing derive(Wrap)
     /// It is used to form the base struct name when an origin isn't explicitly provided
@@ -285,18 +286,22 @@ impl ValidateScoped for NestOpts {
 
 /// Options for struct field attributes
 #[derive(Debug, Clone, FromField)]
-#[darling(attributes(shrinkwrap))]
+#[darling(attributes(shrinkwrap), forward_attrs, allow_unknown_fields)]
 pub struct DeriveItemFieldOpts {
     /// only None for tuple fields, therefore safe to unwrap
     pub ident: Option<Ident>,
 
     #[darling(default, multiple, rename = "nest_in")]
     pub nest_in_opts: Vec<NestInOpts>,
+
+    pub attrs: Vec<syn::Attribute>,
 }
 impl ValidateScoped for DeriveItemFieldOpts { }
 
+
 /// Wrap field `nest_in` attribute options
 #[derive(Debug, Clone, FromMeta)]
+#[darling(allow_unknown_fields)]
 pub struct NestInOpts {
     /// Nest key for which this field should be included/mapped
     #[darling(rename = "id")]

@@ -17,6 +17,27 @@ pub(crate) fn derive_wrap_impl(input: TokenStream) -> TokenStream {
         }
     };
 
+    let fields = &args.data.clone().take_struct().unwrap().fields;
+    for field in fields {
+        eprintln!("\ndumping field:\n{field:#?}");
+        let field_attrs = &field.attrs;
+        // let attrs_tokenized = quote::quote! { #field_attrs };
+        for attr in field_attrs {
+            let path = attr.path();
+            match darling::util::parse_attribute_to_meta_list(&attr) {
+                Ok(parsed) => {
+                    eprintln!("successfully parsed attribute {path:#?}");
+                    let parsed_fmt = quote::quote! { #parsed};
+                    eprintln!("generated output for attrs: {parsed_fmt}");
+                },
+                Err(err) => {
+                    eprintln!("failed to parse attribute {path:#?} - {err}");
+                },
+            }
+            // let attr_val =    .unwrap();
+            // eprintln!("parsed attr_val: {attr_val:#?}");
+        }
+    }
     if let Some(invalidity) = &args.validate_within_scope() {
         let errors = invalidity.join("\n\n");
         if !errors.is_empty() {
