@@ -16,7 +16,7 @@ pub(crate) type HasInvalidity = Option<Vec<InvalidityReason>>;
 ///
 /// Should not perform higher-level validation with other types
 pub(crate) trait ValidateScoped {
-    fn validate_within_scope(&self) -> HasInvalidity;
+    fn validate_within_scope(&self) -> HasInvalidity { None }
 }
 
 // - darling types
@@ -135,11 +135,7 @@ impl WrapperOpts {
         }
     }
 }
-impl ValidateScoped for WrapperOpts {
-    fn validate_within_scope(&self) -> HasInvalidity {
-        None
-    }
-}
+impl ValidateScoped for WrapperOpts { }
 
 /// Options for struct extra attribute
 #[derive(Debug, Clone, Default, FromMeta)]
@@ -170,11 +166,7 @@ impl ExtraOpts {
         format_ident!("{parent_data_ident}{}", self.struct_name_suffix())
     }
 }
-impl ValidateScoped for ExtraOpts {
-    fn validate_within_scope(&self) -> HasInvalidity {
-        None
-    }
-}
+impl ValidateScoped for ExtraOpts { }
 
 #[derive(Debug, Clone, FromMeta, PartialEq, Eq)]
 #[darling(rename_all = "snake_case")]
@@ -301,11 +293,7 @@ pub struct DeriveItemFieldOpts {
     #[darling(default, multiple, rename = "nest_in")]
     pub nest_in_opts: Vec<NestInOpts>,
 }
-impl ValidateScoped for DeriveItemFieldOpts {
-    fn validate_within_scope(&self) -> HasInvalidity {
-        None
-    }
-}
+impl ValidateScoped for DeriveItemFieldOpts { }
 
 /// Wrap field `nest_in` attribute options
 #[derive(Debug, Clone, FromMeta)]
