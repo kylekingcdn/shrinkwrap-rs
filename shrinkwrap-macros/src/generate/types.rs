@@ -1,12 +1,12 @@
 #![doc = "Intermediate structs used to simplify generation"]
 
-use darling::util::PathList;
 use darling::ToTokens;
+use darling::util::PathList;
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use syn::{Ident, Path, Type};
 
-use crate::parse::types::{WrapperOpts, NestOpts, ExtraOpts};
+use crate::parse::types::{ExtraOpts, NestOpts, WrapperOpts};
 
 // -- TODO, add opt structs as child, only define newly required fields
 
@@ -30,7 +30,14 @@ impl Wrapper {
         let struct_name = opts.struct_name(root_ident);
         let data_field_name = opts.data_field_name();
         let extra_field_name = opts.extra_field_name();
-        let WrapperOpts { doc, derive, data_field_doc, flatten_data, extra_field_doc, .. } = opts;
+        let WrapperOpts {
+            doc,
+            derive,
+            data_field_doc,
+            flatten_data,
+            extra_field_doc,
+            ..
+        } = opts;
 
         Self {
             struct_name,
@@ -46,7 +53,7 @@ impl Wrapper {
         }
     }
     pub fn build_from_data_impl(&self) -> TokenStream {
-       let data_struct_name = &self.data_struct_name;
+        let data_struct_name = &self.data_struct_name;
         let extra_struct_name = &self.extra_struct_name;
         let field_tokens = quote! {
             extra: <#extra_struct_name as From<&#data_struct_name>>::from(&data),
@@ -60,7 +67,7 @@ impl Wrapper {
             &from_param_name,
             &self.struct_name,
             field_tokens,
-            &mut output
+            &mut output,
         );
         output
     }
@@ -78,7 +85,11 @@ impl Wrapper {
             }
         }
     }
-    pub fn to_wrapped_with_impl(&self, transformer_type: Type, root_nests: &Vec<ExtraNestField>) -> TokenStream {
+    pub fn to_wrapped_with_impl(
+        &self,
+        transformer_type: Type,
+        root_nests: &Vec<ExtraNestField>,
+    ) -> TokenStream {
         let wrapper_struct_name = &self.struct_name;
         let data_struct_name = &self.data_struct_name;
         let data_field_name = &self.data_field_name;
@@ -88,7 +99,7 @@ impl Wrapper {
         let mut extra_fields = quote!();
         for nest in root_nests {
             let nest_field_name = &nest.field_name;
-            extra_fields.extend(quote!{
+            extra_fields.extend(quote! {
                 #nest_field_name: transform.transform_to_nest(&self),
             })
         }
@@ -111,7 +122,14 @@ impl ToTokens for Wrapper {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         let derives = build_derives_token(&self.derive);
         let doc = build_docs_token(&self.struct_docs);
-        let Self { struct_name, data_field_name, data_struct_name, extra_field_name, extra_struct_name, .. } = &self;
+        let Self {
+            struct_name,
+            data_field_name,
+            data_struct_name,
+            extra_field_name,
+            extra_struct_name,
+            ..
+        } = &self;
 
         let flatten_attr = match self.data_flattened {
             true => quote! {
@@ -181,7 +199,7 @@ impl Extra {
             &from_param_name,
             &self.struct_name,
             nest_field_tokens,
-            &mut output
+            &mut output,
         );
         output
     }
@@ -232,10 +250,20 @@ pub struct Nest {
     pub with_extra: Option<ExtraNestField>,
 }
 impl Nest {
-    pub fn new(opts: NestOpts, root_ident: &Ident, fields: Vec<NestField>, with_extra: Option<ExtraNestField>) -> Self {
+    pub fn new(
+        opts: NestOpts,
+        root_ident: &Ident,
+        fields: Vec<NestField>,
+        with_extra: Option<ExtraNestField>,
+    ) -> Self {
         let struct_name = opts.struct_name(root_ident);
         let origin_ident = opts.origin(root_ident).clone();
-        let NestOpts { derive, doc, field_type, .. } = opts;
+        let NestOpts {
+            derive,
+            doc,
+            field_type,
+            ..
+        } = opts;
         Self {
             struct_name,
             struct_docs: doc,
@@ -264,11 +292,19 @@ impl ToTokens for Nest {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         let derives = build_derives_token(&self.derive);
         let doc = build_docs_token(&self.struct_docs);
-        let Self { struct_name, field_type, .. } = &self;
+        let Self {
+            struct_name,
+            field_type,
+            ..
+        } = &self;
 
         let mut field_tokens = TokenStream::new();
 
-        for NestField { name, field_doc: field_doc_str } in &self.fields {
+        for NestField {
+            name,
+            field_doc: field_doc_str,
+        } in &self.fields
+        {
             let field_doc = build_docs_token(field_doc_str);
             field_tokens.extend(quote! {
                 #field_doc
@@ -307,7 +343,7 @@ impl PartialEq for NestField {
         self.name == other.name
     }
 }
-impl Eq for NestField { }
+impl Eq for NestField {}
 
 // -- quote helpers
 
@@ -345,16 +381,16 @@ pub(crate) fn build_from_impl(
     to_type: &Ident,
     fields: proc_macro2::TokenStream,
     tokens: &mut proc_macro2::TokenStream,
-)  {
-   tokens.extend(quote! {
-       impl From<#from_type> for #to_type {
-           fn from(#from_param_name: #from_type) -> Self {
-               Self {
-                   #fields
-               }
-           }
-       }
-   })
+) {
+    tokens.extend(quote! {
+        impl From<#from_type> for #to_type {
+            fn from(#from_param_name: #from_type) -> Self {
+                Self {
+                    #fields
+                }
+            }
+        }
+    })
 }
 
 pub(crate) fn build_from_impl_with_ref(
@@ -363,14 +399,14 @@ pub(crate) fn build_from_impl_with_ref(
     to_type: &Ident,
     fields: proc_macro2::TokenStream,
     tokens: &mut proc_macro2::TokenStream,
-)  {
-   tokens.extend(quote! {
-       impl From<&#from_type> for #to_type {
-           fn from(#from_param_name: &#from_type) -> Self {
-               Self {
-                   #fields
-               }
-           }
-       }
-   })
+) {
+    tokens.extend(quote! {
+        impl From<&#from_type> for #to_type {
+            fn from(#from_param_name: &#from_type) -> Self {
+                Self {
+                    #fields
+                }
+            }
+        }
+    })
 }

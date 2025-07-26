@@ -29,7 +29,4 @@ where
 }
 
 /// Blanket implementation providing `to_nest_with(transform)` for data structs that have a corresponding transform impl (`impl TransformToNest<Data, Nest> for MyTransform`)
-impl<D, N, T> ToNestWith<N, T> for D
-where
-    T: TransformToNest<D, N>
-{ }
+impl<D, N, T> ToNestWith<N, T> for D where T: TransformToNest<D, N> {}

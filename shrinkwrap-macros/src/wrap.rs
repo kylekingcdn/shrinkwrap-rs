@@ -11,9 +11,7 @@ pub(crate) fn derive_wrap_impl(input: TokenStream) -> TokenStream {
     let origin_struct = parse_macro_input!(input as DeriveInput);
 
     let args = match DeriveItemOpts::from_derive_input(&origin_struct) {
-        Ok(v) => {
-            v
-        },
+        Ok(v) => v,
         Err(e) => {
             return TokenStream::from(e.write_errors());
         }
@@ -34,7 +32,7 @@ pub(crate) fn derive_wrap_impl(input: TokenStream) -> TokenStream {
             Ok(out_file) => {
                 let out_fmt = prettyplease::unparse(&out_file);
                 eprintln!("{}", &out_fmt);
-                }
+            }
             Err(err) => {
                 eprintln!("failed to render formatted output - err: {err}\n\nunformatted: {out}");
             }

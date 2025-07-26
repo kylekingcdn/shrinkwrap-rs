@@ -1,8 +1,8 @@
-#![doc="Types used for deserializing attributes (via Darling)"]
+#![doc = "Types used for deserializing attributes (via Darling)"]
 
-use darling::{FromDeriveInput, FromField, FromMeta};
 use darling::ast::Data;
 use darling::util::{Override, PathList};
+use darling::{FromDeriveInput, FromField, FromMeta};
 use heck::AsUpperCamelCase;
 use quote::format_ident;
 use syn::{Ident, Path, Type};
@@ -23,7 +23,11 @@ pub(crate) trait ValidateScoped {
 
 /// Root derive options
 #[derive(Debug, Clone, FromDeriveInput)]
-#[darling(attributes(shrinkwrap), forward_attrs(allow, doc, cfg), supports(struct_named))]
+#[darling(
+    attributes(shrinkwrap),
+    forward_attrs(allow, doc, cfg),
+    supports(struct_named)
+)]
 pub(crate) struct DeriveItemOpts {
     pub ident: Ident,
     pub data: Data<(), DeriveItemFieldOpts>,
@@ -98,12 +102,12 @@ pub struct WrapperOpts {
 }
 impl WrapperOpts {
     pub fn struct_name_default(data_ident: &Ident) -> Ident {
-       format_ident!("{data_ident}Wrapper")
+        format_ident!("{data_ident}Wrapper")
     }
     pub fn struct_name(&self, data_ident: &Ident) -> Ident {
         match &self.rename {
             Some(name) => name.clone(),
-            None => Self::struct_name_default(data_ident)
+            None => Self::struct_name_default(data_ident),
         }
     }
     fn data_field_name_default() -> Ident {
@@ -112,7 +116,7 @@ impl WrapperOpts {
     pub fn data_field_name(&self) -> Ident {
         match &self.data_field_name {
             Some(name) => name.clone(),
-            None => Self::data_field_name_default()
+            None => Self::data_field_name_default(),
         }
     }
     fn flatten_data_default() -> bool {
@@ -127,7 +131,7 @@ impl WrapperOpts {
     pub fn extra_field_name(&self) -> Ident {
         match &self.extra_field_name {
             Some(name) => name.clone(),
-            None => Self::extra_field_name_default()
+            None => Self::extra_field_name_default(),
         }
     }
 }
@@ -159,7 +163,7 @@ impl ExtraOpts {
     pub fn struct_name_suffix(&self) -> Ident {
         match &self.struct_suffix {
             Some(suffix) => suffix.clone(),
-            None => Self::struct_name_suffix_default()
+            None => Self::struct_name_suffix_default(),
         }
     }
     pub fn struct_name(&self, parent_data_ident: &Ident) -> Ident {
@@ -187,9 +191,9 @@ impl NestMapStrategy {
         matches!(self, Self::Transform(_))
     }
     pub fn map_transform_type(&self) -> Option<Type> {
-        match &self  {
+        match &self {
             NestMapStrategy::From => None,
-            NestMapStrategy::Transform(transform) => Some(transform.clone())
+            NestMapStrategy::Transform(transform) => Some(transform.clone()),
         }
     }
 }
@@ -240,7 +244,7 @@ impl NestOpts {
     pub fn field_name(&self) -> Ident {
         match &self.field_name {
             Some(name) => name.clone(),
-            None => self.field_name_default()
+            None => self.field_name_default(),
         }
     }
     pub fn build_struct_name_suffix(id: &str) -> Ident {
@@ -262,7 +266,7 @@ impl NestOpts {
     pub fn struct_name(&self, root_ident: &Ident) -> Ident {
         match &self.rename {
             Some(name) => name.clone(),
-            None => self.struct_name_default(root_ident)
+            None => self.struct_name_default(root_ident),
         }
     }
 
@@ -302,7 +306,6 @@ impl ValidateScoped for DeriveItemFieldOpts {
         None
     }
 }
-
 
 /// Wrap field `nest_in` attribute options
 #[derive(Debug, Clone, FromMeta)]
