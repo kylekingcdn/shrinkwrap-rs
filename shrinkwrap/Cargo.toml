@@ -11,4 +11,4 @@ license = "MIT"
 
 [dependencies]
 serde = { version = "1.0.219", features = ["derive"] }
-shrinkwrap-macros = { version = "0.0.2", path = "../shrinkwrap-macros" }
+shrinkwrap-macros = { version = "0.0.3", path = "../shrinkwrap-macros" }
