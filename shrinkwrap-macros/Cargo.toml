@@ -11,13 +11,15 @@ license = "MIT"
 [lib]
 proc-macro = true
 
+[features]
+default = []
+expand = ["prettyplease"]
+
 [dependencies]
 darling = "0.21.0"
 heck = "0.5.0"
+prettyplease = { version = "0.2.36", optional = true }
 proc-macro-error2 = "2.0.1"
 proc-macro2 = "1.0.95"
 quote = "1.0.40"
-syn = { version = "2.0.104" }
-
-[dev-dependencies]
 syn = { version = "2.0.104", features = ["extra-traits"] }

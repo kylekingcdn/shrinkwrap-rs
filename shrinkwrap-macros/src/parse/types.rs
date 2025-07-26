@@ -3,7 +3,8 @@
 use darling::{FromDeriveInput, FromField, FromMeta};
 use darling::ast::Data;
 use darling::util::{Override, PathList};
-use heck::AsTitleCase;
+use heck::AsUpperCamelCase;
+use quote::format_ident;
 use syn::{Ident, Path, Type};
 
 // - validate trait
@@ -55,34 +56,15 @@ impl ValidateScoped for DeriveItemOpts {
             None
         } else {
             issues.into()
-        } // TODO: field validation
+        }
     }
 }
 
-// TODO: add support for nesting of nests (sorry)
-//
-// e.g. a nest would also be a wrapper for subsequent nests.
-// From the client perspective, this is just adding an `extra` object & properties to a nest.
-//
-// Useful for situations where there are layered representations
-// e.g. consider the following 2 nests representing an amount field
-//
-//   ```
-//   amount_in_local_currency -> text
-//   amount_in_local_currency -> usd_value
-//   ```
-//
-// there should certainly be this chain as well.
-//
-// ```
-//   amount_in_local_currency -> usd_value -> text
-// ```
-//
 /// Options for struct wrapper attribute
 #[derive(Debug, Clone, Default, FromMeta)]
 pub struct WrapperOpts {
     /// set the parent wrapper struct name - defaults to `{DataStructName}Wrapper`
-    rename: Option<String>,
+    rename: Option<Ident>,
 
     /// Derives to apply to the wrapper struct
     #[darling(default)]
@@ -93,8 +75,8 @@ pub struct WrapperOpts {
     pub doc: String,
 
     /// Field name for data struct, defaults to data
-    #[darling(default = Self::data_field_name_default)]
-    data_field_name: String,
+    #[darling(default)]
+    data_field_name: Option<Ident>,
 
     /// Sets field-level documentation for data field
     #[darling(default = String::new)]
@@ -107,8 +89,8 @@ pub struct WrapperOpts {
     pub flatten_data: Override<bool>,
 
     /// Field name for extra struct, defaults to data
-    #[darling(default = Self::extra_field_name_default)]
-    extra_field_name: String,
+    #[darling(default)]
+    extra_field_name: Option<Ident>,
 
     /// Sets field-level documentation for extra field
     #[darling(default = String::new)]
@@ -116,22 +98,21 @@ pub struct WrapperOpts {
 }
 impl WrapperOpts {
     pub fn struct_name_default(data_ident: &Ident) -> Ident {
-        Ident::new(format!("{data_ident}Wrapper").as_str(), data_ident.span())
+       format_ident!("{data_ident}Wrapper")
     }
     pub fn struct_name(&self, data_ident: &Ident) -> Ident {
         match &self.rename {
-            Some(name) => Ident::new(name, data_ident.span()),
-            None => Self::struct_name_default(data_ident),
+            Some(name) => name.clone(),
+            None => Self::struct_name_default(data_ident)
         }
     }
-    fn data_field_name_default() -> String {
-        "data".into()
+    fn data_field_name_default() -> Ident {
+        format_ident!("data")
     }
-    pub fn data_field_name(&self) -> String {
-        if self.data_field_name.is_empty() {
-            Self::data_field_name_default()
-        } else {
-            self.data_field_name.clone()
+    pub fn data_field_name(&self) -> Ident {
+        match &self.data_field_name {
+            Some(name) => name.clone(),
+            None => Self::data_field_name_default()
         }
     }
     fn flatten_data_default() -> bool {
@@ -140,40 +121,28 @@ impl WrapperOpts {
     fn flatten_data_override_default() -> Override<bool> {
         Some(Self::flatten_data_default()).into()
     }
-
-    fn extra_field_name_default() -> String {
-        "extra".into()
+    fn extra_field_name_default() -> Ident {
+        format_ident!("extra")
     }
-    pub fn extra_field_name(&self) -> String {
-        if self.extra_field_name.is_empty() {
-            Self::extra_field_name_default()
-        } else {
-            self.extra_field_name.clone()
+    pub fn extra_field_name(&self) -> Ident {
+        match &self.extra_field_name {
+            Some(name) => name.clone(),
+            None => Self::extra_field_name_default()
         }
     }
 }
 impl ValidateScoped for WrapperOpts {
     fn validate_within_scope(&self) -> HasInvalidity {
-        let mut issues = Vec::new();
-
-        if let Some(rename) = &self.rename {
-            if rename.is_empty() {
-                issues.push("Wrapper `rename` must have a value when explicitly defined".into());
-            }
-        }
-        if issues.is_empty() {
-            None
-        } else {
-            issues.into()
-        }
+        None
     }
 }
 
 /// Options for struct extra attribute
 #[derive(Debug, Clone, Default, FromMeta)]
 pub struct ExtraOpts {
-    /// set the `extra` struct name - defaults to `{DataStructName}Extra`
-    rename: Option<String>,
+    /// set the `extra` struct name suffix - defaults to `Extra` (full struct name would be {DataStructName}Extra`)
+    #[darling(default)]
+    struct_suffix: Option<Ident>,
 
     /// Derives to apply to the extra struct - Debug, Clone, and serde::Serialize are required and auto-derived
     #[darling(default)]
@@ -184,29 +153,43 @@ pub struct ExtraOpts {
     pub doc: String,
 }
 impl ExtraOpts {
-    fn struct_name_default(data_ident: &Ident) -> Ident {
-        Ident::new(format!("{data_ident}Extra").as_str(), data_ident.span())
+    fn struct_name_suffix_default() -> Ident {
+        format_ident!("Extra")
     }
-    pub fn struct_name(&self, data_ident: &Ident) -> Ident {
-        match &self.rename {
-            Some(name) => Ident::new(name, data_ident.span()),
-            None => Self::struct_name_default(data_ident),
+    pub fn struct_name_suffix(&self) -> Ident {
+        match &self.struct_suffix {
+            Some(suffix) => suffix.clone(),
+            None => Self::struct_name_suffix_default()
         }
+    }
+    pub fn struct_name(&self, parent_data_ident: &Ident) -> Ident {
+        format_ident!("{parent_data_ident}{}", self.struct_name_suffix())
     }
 }
 impl ValidateScoped for ExtraOpts {
     fn validate_within_scope(&self) -> HasInvalidity {
-        let mut issues = Vec::new();
+        None
+    }
+}
 
-        if let Some(rename) = &self.rename {
-            if rename.is_empty() {
-                issues.push("Extra `rename` must have a value when explicitly defined".into());
-            }
-        }
-        if issues.is_empty() {
-            None
-        } else {
-            issues.into()
+#[derive(Debug, Clone, FromMeta, PartialEq, Eq)]
+#[darling(rename_all = "snake_case")]
+#[allow(clippy::large_enum_variant)]
+pub enum NestMapStrategy {
+    From,
+    Transform(Type),
+}
+impl NestMapStrategy {
+    pub fn maps_with_from(&self) -> bool {
+        matches!(self, Self::From)
+    }
+    pub fn maps_with_transform(&self) -> bool {
+        matches!(self, Self::Transform(_))
+    }
+    pub fn map_transform_type(&self) -> Option<Type> {
+        match &self  {
+            NestMapStrategy::From => None,
+            NestMapStrategy::Transform(transform) => Some(transform.clone())
         }
     }
 }
@@ -214,11 +197,18 @@ impl ValidateScoped for ExtraOpts {
 /// Options for struct nest attribute
 #[derive(Debug, Clone, FromMeta)]
 pub struct NestOpts {
-    /// used for the nest field key under `data.extra` as well as an identifier for other attributes
-    pub key: String,
+    /// used for specifying/identifying a nest from an attribute. Must be unique among all nests under a given Data struct
+    pub id: String,
 
-    /// sets the name of the nests' generated struct - defaults to `{DataStructName}{titlecased_key}`
-    rename: Option<String>,
+    /// used for the nest field name under `data.extra`.
+    /// This should typically be identical and must be unique among the other sibling nests.
+    /// Typically this should only be used when implementing nested data hierarchies via [`origin`](Self::origin)
+    ///
+    /// Defaults to `self.id`
+    field_name: Option<Ident>,
+
+    /// sets the name of the nests' generated struct - defaults to `{DataStructName}{upper_camel_case(id)}`
+    rename: Option<Ident>,
 
     /// Derives to apply to the nest struct - Debug, Clone, and serde::Serialize are required and auto-derived
     #[darling(default)]
@@ -227,53 +217,68 @@ pub struct NestOpts {
     /// sets the type for the fields in the nested struct
     pub field_type: Path,
 
-    /// Path to transform function used to convert data struct into nest struct.
-    pub transform: Option<Type>,
+    /// Override the source 'Data' struct used for:
+    /// - places this nest in a dedicated Extra struct under the overriden type instead of the primary `Data` struct
+    /// - Any `ToNest`, `ToNestWith`, `TransformToNest`, etc impls will use this as the source data set instead of `Data`
+    ///
+    /// **Note:** This cannot be some arbitrary type. It must be:
+    ///   1. Built internally by this derive macro
+    ///   2. Exist within this data struct tree (rather than a struct generated for another data tree)
+    pub origin: Option<Ident>,
 
-    /// Derives the transform using an existing `impl From<&Data> for DataNest`
-    #[darling(default)]
-    pub from: bool,
+    #[darling(flatten)]
+    pub map_strategy: NestMapStrategy,
 
     /// Sets the struct-level documentation for the generated Nest struct
     #[darling(default = String::new)]
     pub doc: String,
 }
 impl NestOpts {
-    pub fn build_struct_name_default(data_ident: &Ident, key: &str) -> Ident {
-        let key_titlecase = format!("{}", AsTitleCase(key));
-        Ident::new(format!("{data_ident}Nested{key_titlecase}").as_str(), data_ident.span())
+    fn field_name_default(&self) -> Ident {
+        format_ident!("{}", self.id)
     }
-    pub fn struct_name_default(&self, data_ident: &Ident) -> Ident {
-        Self::build_struct_name_default(data_ident, &self.key)
+    pub fn field_name(&self) -> Ident {
+        match &self.field_name {
+            Some(name) => name.clone(),
+            None => self.field_name_default()
+        }
     }
-    pub fn struct_name(&self, data_ident: &Ident) -> Ident {
+    pub fn build_struct_name_suffix(id: &str) -> Ident {
+        let suffix = AsUpperCamelCase(id);
+        format_ident!("{suffix}")
+    }
+    pub fn build_default_struct_name(origin_ident: &Ident, id: &str) -> Ident {
+        let suffix = Self::build_struct_name_suffix(id);
+        format_ident!("{origin_ident}Nested{suffix}")
+    }
+    /// `root_ident` is the ident of the top-level data struct containing derive(Wrap)
+    /// It is used to form the base struct name when an origin isn't explicitly provided
+    pub fn struct_name_default(&self, root_ident: &Ident) -> Ident {
+        let origin_ident = self.origin.as_ref().unwrap_or(root_ident);
+        Self::build_default_struct_name(origin_ident, &self.id)
+    }
+    /// `root_ident` is the ident of the top-level data struct containing derive(Wrap)
+    /// It is used to form the base struct name when an origin isn't explicitly provided
+    pub fn struct_name(&self, root_ident: &Ident) -> Ident {
         match &self.rename {
-            Some(name) => Ident::new(name, data_ident.span()),
-            None => self.struct_name_default(data_ident),
+            Some(name) => name.clone(),
+            None => self.struct_name_default(root_ident)
+        }
+    }
+
+    pub fn origin<'a>(&'a self, root_ident: &'a Ident) -> &'a Ident {
+        match &self.origin {
+            Some(origin) => origin,
+            None => root_ident,
         }
     }
 }
 impl ValidateScoped for NestOpts {
     fn validate_within_scope(&self) -> HasInvalidity {
         let mut issues = Vec::new();
-        if self.key.is_empty() {
-            issues.push("Nest `key` cannot be empty".into());
+        if self.id.is_empty() {
+            issues.push("Nest `id` cannot be empty".into());
         }
-        if let Some(rename) = &self.rename {
-            if rename.is_empty() {
-                issues.push("Nest `rename` must have a value when explicitly defined".into());
-            }
-        }
-        // skipping complicated `field_type` path check now as it will be done at higher level validation
-
-        let has_transform = self.transform.is_some();
-        let has_from = self.from;
-        if has_transform && has_from {
-            issues.push("Nest attributes `from` and `transform` cannot both be defined in the same nest".into());
-        } else if !has_transform && !has_from {
-            issues.push("Either `from` or `transform` must be defined for a nest".into());
-        }
-
         if issues.is_empty() {
             None
         } else {
@@ -303,8 +308,8 @@ impl ValidateScoped for DeriveItemFieldOpts {
 #[derive(Debug, Clone, FromMeta)]
 pub struct NestInOpts {
     /// Nest key for which this field should be included/mapped
-    #[darling(rename = "key")]
-    pub nest_key: Ident,
+    #[darling(rename = "id")]
+    pub nest_id: Ident,
 
     /// Set the field's documentation for this nest
     #[darling(default = String::new)]
