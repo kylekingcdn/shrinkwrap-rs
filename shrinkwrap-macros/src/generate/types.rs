@@ -6,6 +6,7 @@ use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{Ident, Path, Type};
 
+#[derive(Debug, Clone)]
 pub struct Wrapper {
     pub struct_name: Ident,
     pub struct_docs: String,
@@ -52,6 +53,7 @@ impl ToTokens for Wrapper {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct Extra {
     pub struct_name: Ident,
     pub struct_docs: String,
@@ -89,6 +91,7 @@ impl ToTokens for Extra {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct Nest {
     pub struct_name: Ident,
     pub struct_docs: String,
@@ -140,6 +143,7 @@ impl Nest {
     }
 }
 
+#[derive(Debug, Clone)]
 pub enum NestTransform {
     FromImpl { data_ident: syn::Ident },
     Transform { transformer_type: syn::Type },
@@ -157,6 +161,7 @@ impl PartialEq for NestField {
 }
 impl Eq for NestField { }
 
+#[derive(Debug, Clone)]
 pub struct NestTransformMetadata {
     /// true if all nests of a struct support From<&Data>
     pub all_from: bool,
