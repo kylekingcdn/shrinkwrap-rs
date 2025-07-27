@@ -1,12 +1,11 @@
 #![doc = "Types used for deserializing attributes (via Darling)"]
 
-use darling::ast::{Data, NestedMeta};
+use darling::ast::Data;
 use darling::util::{Override, PathList};
-use darling::{FromDeriveInput, FromField, FromMeta, FromAttributes};
+use darling::{FromDeriveInput, FromField, FromMeta};
 use heck::AsUpperCamelCase;
-use proc_macro2::TokenStream;
-use quote::{format_ident, ToTokens};
-use syn::{Attribute, Ident, Path, Type, Meta};
+use quote::{format_ident};
+use syn::{Ident, Path, Type};
 
 // - validate trait
 

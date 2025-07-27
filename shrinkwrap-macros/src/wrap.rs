@@ -1,26 +1,12 @@
-use darling::{FromDeriveInput, FromMeta, ast::NestedMeta};
+use darling::{FromDeriveInput};
 use proc_macro::TokenStream;
-use quote::ToTokens;
-use syn::{DeriveInput, Ident, Path, parse_macro_input};
-use std::error::Error;
+use syn::{DeriveInput, parse_macro_input};
 
 use crate::generate::generate_entrypoint;
-use crate::parse::types::{DeriveItemOpts, ValidateScoped, PassthroughAttribute};
+use crate::parse::types::{DeriveItemOpts, ValidateScoped};
 
 // -- TODO: use nproc macro error
 
-#[derive(Debug, Clone)]
-pub struct WrapGenError {
-    pub error_text: String,
-}
-impl std::fmt::Display for WrapGenError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.error_text)
-    }
-}
-impl Error for WrapGenError {
-
-}
 pub(crate) fn derive_wrap_impl(input: TokenStream) -> TokenStream {
     let origin_struct = parse_macro_input!(input as DeriveInput);
 
