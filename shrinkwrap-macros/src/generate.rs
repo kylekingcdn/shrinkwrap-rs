@@ -6,7 +6,8 @@ use syn::{Ident, Type};
 mod types;
 
 use crate::parse::types::{
-    DeriveItemFieldOpts, DeriveItemOpts, ExtraOpts, NestMapStrategy, NestOpts, WrapperOpts, PassthroughAttribute,
+    DeriveItemFieldOpts, DeriveItemOpts, ExtraOpts, NestMapStrategy, NestOpts,
+    PassthroughAttribute, WrapperOpts,
 };
 use types::*;
 
@@ -92,14 +93,19 @@ pub(crate) fn generate_entrypoint(root: DeriveItemOpts) -> proc_macro2::TokenStr
     output
 }
 
-pub(crate) fn parse_field_attrs<'a>(root_ident: &'a Ident, fields: &'a Vec<DeriveItemFieldOpts>, nest_fields: &'a NestFieldMap<'a>) ->  Result<NestFieldAttrMap<'a>, syn::Error> {
+pub(crate) fn parse_field_attrs<'a>(
+    root_ident: &'a Ident,
+    fields: &'a Vec<DeriveItemFieldOpts>,
+    nest_fields: &'a NestFieldMap<'a>,
+) -> Result<NestFieldAttrMap<'a>, syn::Error> {
     let mut map = NestFieldAttrMap::new();
 
     let passthrough_attr_ident = Ident::new("shrinkwrap_attr", root_ident.span());
     for field in fields {
-for attr in &field.attrs {
+        for attr in &field.attrs {
             if attr.path().get_ident() == Some(&passthrough_attr_ident) {
-                let attr_struct = PassthroughAttribute::from_meta(&attr.meta).map_err(|e| syn::Error::new(root_ident.span(), e))?;
+                let attr_struct = PassthroughAttribute::from_meta(&attr.meta)
+                    .map_err(|e| syn::Error::new(root_ident.span(), e))?;
 
                 for attr in attr_struct.attr {
                     let attr_contents = &attr.require_list().unwrap().tokens;
@@ -124,12 +130,18 @@ for attr in &field.attrs {
                         // restrict to specified nests
                         for nest_id in attr_struct.nest.to_strings() {
                             if !nest_fields.contains_key(&nest_id) {
-                                panic!("Nest '{nest_id}' doesn't exist (defined in `#[shrinkwrap_attr(...)]` field {})", field_attr.field_name);
+                                panic!(
+                                    "Nest '{nest_id}' doesn't exist (defined in `#[shrinkwrap_attr(...)]` field {})",
+                                    field_attr.field_name
+                                );
                             }
                             if !map.contains_key(&nest_id) {
                                 map.insert(nest_id.to_owned(), vec![]);
                             } else if visited_nest_ids.contains(&nest_id) {
-                                panic!("Nest '{nest_id}' specified multiple times (defined in `#[shrinkwrap_attr(...)]` field {})", field_attr.field_name);
+                                panic!(
+                                    "Nest '{nest_id}' specified multiple times (defined in `#[shrinkwrap_attr(...)]` field {})",
+                                    field_attr.field_name
+                                );
                             }
                             map.get_mut(&nest_id).unwrap().push(field_attr.clone());
                             visited_nest_ids.insert(nest_id.to_owned());

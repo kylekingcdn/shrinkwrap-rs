@@ -309,17 +309,20 @@ impl ToTokens for Nest {
             field_doc: field_doc_str,
         } in &self.fields
         {
-            let field_attrs = self.field_attrs.iter().find(|attr| &attr.field_name == name);
+            let field_attrs = self
+                .field_attrs
+                .iter()
+                .find(|attr| &attr.field_name == name);
             let nested_attr_tokens = match field_attrs {
                 Some(attrs) => {
                     let attributes_out = attrs.attributes_token.clone();
                     quote::quote! {
                         #[#attributes_out]
                     }
-                },
+                }
                 None => {
                     quote::quote! {}
-                },
+                }
             };
             let field_doc = build_docs_token(field_doc_str);
             field_tokens.extend(quote! {
@@ -365,7 +368,7 @@ impl Eq for NestField {}
 #[derive(Debug, Clone)]
 pub struct NestFieldAttrs {
     pub field_name: Ident,
-    pub attributes_token: TokenStream
+    pub attributes_token: TokenStream,
 }
 
 /// Provides a mapping of a nest's defined origin (or root) to nest opts

@@ -4,7 +4,7 @@ use darling::ast::Data;
 use darling::util::{Override, PathList};
 use darling::{FromDeriveInput, FromField, FromMeta};
 use heck::AsUpperCamelCase;
-use quote::{format_ident};
+use quote::format_ident;
 use syn::{Ident, Path, Type};
 
 // - validate trait
@@ -16,7 +16,9 @@ pub(crate) type HasInvalidity = Option<Vec<InvalidityReason>>;
 ///
 /// Should not perform higher-level validation with other types
 pub(crate) trait ValidateScoped {
-    fn validate_within_scope(&self) -> HasInvalidity { None }
+    fn validate_within_scope(&self) -> HasInvalidity {
+        None
+    }
 }
 
 // - darling types
@@ -135,7 +137,7 @@ impl WrapperOpts {
         }
     }
 }
-impl ValidateScoped for WrapperOpts { }
+impl ValidateScoped for WrapperOpts {}
 
 /// Options for struct extra attribute
 #[derive(Debug, Clone, Default, FromMeta)]
@@ -166,7 +168,7 @@ impl ExtraOpts {
         format_ident!("{parent_data_ident}{}", self.struct_name_suffix())
     }
 }
-impl ValidateScoped for ExtraOpts { }
+impl ValidateScoped for ExtraOpts {}
 
 #[derive(Debug, Clone, FromMeta, PartialEq, Eq)]
 #[darling(rename_all = "snake_case")]
@@ -243,9 +245,17 @@ impl NestOpts {
         let suffix = AsUpperCamelCase(field_name.to_string());
         format_ident!("{suffix}")
     }
-    pub fn build_default_struct_name(origin_ident: &Ident, root_ident: &Ident, field_name: &Ident) -> Ident {
+    pub fn build_default_struct_name(
+        origin_ident: &Ident,
+        root_ident: &Ident,
+        field_name: &Ident,
+    ) -> Ident {
         // To avoid obnoxiously long struct names, only include the nested keyword once (root nests)
-        let region_descriptor = if origin_ident == root_ident { "Nested" } else { Default::default() };
+        let region_descriptor = if origin_ident == root_ident {
+            "Nested"
+        } else {
+            Default::default()
+        };
         let suffix = Self::build_struct_name_suffix(field_name);
 
         format_ident!("{origin_ident}{region_descriptor}{suffix}")
@@ -299,7 +309,7 @@ pub struct DeriveItemFieldOpts {
 
     pub attrs: Vec<syn::Attribute>,
 }
-impl ValidateScoped for DeriveItemFieldOpts { }
+impl ValidateScoped for DeriveItemFieldOpts {}
 
 #[derive(Debug, Clone, FromMeta)]
 pub struct PassthroughAttribute {
