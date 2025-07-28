@@ -145,7 +145,9 @@ impl ValidateScoped for WrapperOpts {}
 /// Options for struct extra attribute
 #[derive(Debug, Clone, Default, FromMeta)]
 pub struct ExtraOpts {
-    /// set the `extra` struct name suffix - defaults to `Extra` (full struct name would be {DataStructName}Extra`)
+    /// Set the `extra` struct name suffix - defaults to `Extra`
+    ///
+    /// E.g. For a data struct named: `MyData`, the default corresponding extra struct would be `MyDataExtra`
     #[darling(default)]
     struct_suffix: Option<Ident>,
 
@@ -210,7 +212,7 @@ pub struct NestOpts {
     /// Defaults to `self.id`
     field_name: Option<Ident>,
 
-    /// sets the name of the nests' generated struct - defaults to `{DataStructName}{upper_camel_case(id)}`
+    /// sets the name of the nests' generated struct - defaults to `{DataStructName}{UpperCamel(field_name ? field_name : id)}`
     rename: Option<Ident>,
 
     /// Derives to apply to the nest struct - Debug, Clone, and serde::Serialize are required and auto-derived
