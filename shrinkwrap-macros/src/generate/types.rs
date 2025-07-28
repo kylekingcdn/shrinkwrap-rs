@@ -7,7 +7,7 @@ use quote::{format_ident, quote};
 use std::collections::HashMap;
 use syn::{Ident, Path, Type};
 
-use crate::parse::types::{ExtraOpts, NestOpts, WrapperOpts};
+use crate::parse::types::{ExtraOpts, NestMapStrategy, NestOpts, WrapperOpts};
 
 // -- TODO, add opt structs as child, only define newly required fields
 
@@ -262,7 +262,7 @@ impl Nest {
     ) -> Self {
         let struct_name = opts.struct_name(root_ident);
         let origin_ident = opts.origin(root_ident).clone();
-        let is_nested = opts.origin.is_some();
+        let is_nested = matches!(opts.map_strategy, NestMapStrategy::Nested { .. });
         let NestOpts {
             derive,
             doc,

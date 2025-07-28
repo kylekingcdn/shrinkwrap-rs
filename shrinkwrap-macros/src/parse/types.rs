@@ -175,19 +175,21 @@ impl ValidateScoped for ExtraOpts {}
 #[allow(clippy::large_enum_variant)]
 pub enum NestMapStrategy {
     From,
-    Transform(Type),
+    Transform { with: Type },
+    Nested { origin: Ident }
 }
 impl NestMapStrategy {
     pub fn maps_with_from(&self) -> bool {
         matches!(self, Self::From)
     }
     pub fn maps_with_transform(&self) -> bool {
-        matches!(self, Self::Transform(_))
+        matches!(self, Self::Transform { .. })
     }
     pub fn map_transform_type(&self) -> Option<Type> {
         match &self {
+            NestMapStrategy::Transform { with } => Some(with.clone()),
             NestMapStrategy::From => None,
-            NestMapStrategy::Transform(transform) => Some(transform.clone()),
+            NestMapStrategy::Nested { .. } => None,
         }
     }
 }
@@ -215,15 +217,41 @@ pub struct NestOpts {
     /// sets the type for the fields in the nested struct
     pub field_type: Path,
 
-    /// Override the source 'Data' struct used for:
-    /// - places this nest in a dedicated Extra struct under the overriden type instead of the primary `Data` struct
-    /// - Any `ToNest`, `ToNestWith`, `TransformToNest`, etc impls will use this as the source data set instead of `Data`
+    /// Strategy used to map data to this nest.
     ///
-    /// **Note:** This cannot be some arbitrary type. It must be:
-    ///   1. Built internally by this derive macro
-    ///   2. Exist within this data struct tree (rather than a struct generated for another data tree)
-    pub origin: Option<Ident>,
-
+    /// 1: **`from`**
+    ///
+    ///    Use a **pre-existing** `from` impl:
+    ///    ```rust
+    ///    impl From<&MyData> for MyDataNestedExample
+    ///    ```
+    /// 2: **`transform(with = "TransformTypeGoesHere")`**
+    ///
+    ///    Use a **pre-existing** transform impl of the provided type.
+    ///
+    ///    The transform type must implement `TransformToNest`. e.g.
+    ///    ```rust
+    ///    struct MyTransform {}
+    ///
+    ///    impl TransformToNest<TestData, TestDataNestedText> for MyTransform {
+    ///        fn transform_to_nest(&self, data: &TestData) -> TestDataNestedText {
+    ///            TestDataNestedText {
+    ///                random_number: data.random_number.to_string(),
+    ///            }
+    ///        }
+    ///    }
+    ///    ```
+    /// 3: **`nested(origin = "MyDataNestedExample")`**
+    ///
+    ///    Nest this under an existing nest, where origin = "NestStructType".
+    ///
+    ///    No mapping is needed in this case as mappings are only required for root-level nests.
+    ///    (The mapping logic is still supplied by you, however as a part of the parent nest's mapping strategy)
+    ///
+    ///    This allows you to use either the parent nest's data or the root data as the source for transformation.
+    ///    **Note:** This cannot be some arbitrary type. It must be:
+    ///      1. Built internally by this derive macro
+    ///      2. Exist within this data struct tree (rather than a struct generated for another data tree)
     #[darling(flatten)]
     pub map_strategy: NestMapStrategy,
 
@@ -263,7 +291,10 @@ impl NestOpts {
     /// `root_ident` is the ident of the top-level data struct containing derive(Wrap)
     /// It is used to form the base struct name when an origin isn't explicitly provided
     pub fn struct_name_default(&self, root_ident: &Ident) -> Ident {
-        let origin_ident = self.origin.as_ref().unwrap_or(root_ident);
+        let origin_ident = match &self.map_strategy {
+            NestMapStrategy::Nested { origin } => origin,
+            _ => root_ident
+        };
         let field_name = self.field_name();
         Self::build_default_struct_name(origin_ident, root_ident, &field_name)
     }
@@ -277,9 +308,9 @@ impl NestOpts {
     }
 
     pub fn origin<'a>(&'a self, root_ident: &'a Ident) -> &'a Ident {
-        match &self.origin {
-            Some(origin) => origin,
-            None => root_ident,
+        match &self.map_strategy {
+            NestMapStrategy::Nested { origin } => origin,
+            _ => root_ident,
         }
     }
 }

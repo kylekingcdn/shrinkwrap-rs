@@ -51,7 +51,7 @@ pub(crate) fn generate_entrypoint(root: DeriveItemOpts) -> proc_macro2::TokenStr
         .iter()
         .find(|nest| nest.map_strategy.maps_with_transform())
         .and_then(|n| n.map_strategy.map_transform_type());
-    let first_strategy = first_transform.clone().map(NestMapStrategy::Transform);
+    let first_strategy = first_transform.clone().map(|with|  NestMapStrategy::Transform { with });
     let all_identical_transform = match first_strategy {
         Some(strategy) => root_nests.iter().all(|nest| nest.map_strategy == strategy),
         None => false,
