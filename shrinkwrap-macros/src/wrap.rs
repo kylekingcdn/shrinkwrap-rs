@@ -23,11 +23,8 @@ pub(crate) fn derive_wrap_impl(input: TokenStream) -> TokenStream {
             panic!("{errors}");
         }
     }
+    let out = generate_entrypoint(args);
+    expand_tokens(&out, "Full shrinkwrap derive");
 
-    {
-        let out = generate_entrypoint(args);
-        expand_tokens(&out, "Full shrinkwrap derive");
-
-        out.into()
-    }
+    out.into()
 }

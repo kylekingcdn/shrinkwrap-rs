@@ -5,7 +5,7 @@ use darling::util::{Flag, Override, PathList};
 use darling::{FromDeriveInput, FromField, FromMeta};
 use heck::AsUpperCamelCase;
 use quote::format_ident;
-use syn::{Ident, Path, Type};
+use syn::{Attribute, Ident, Path, Type};
 
 // - validate trait
 
@@ -26,13 +26,14 @@ pub(crate) trait ValidateScoped {
 /// Root derive options
 #[derive(Debug, Clone, FromDeriveInput)]
 #[darling(
-    attributes(shrinkwrap, shrinkwrap_attr),
-    forward_attrs(allow, doc, cfg),
+    attributes(shrinkwrap),
+    forward_attrs(allow, doc, cfg, shrinkwrap_attr),
     supports(struct_named)
 )]
 pub(crate) struct DeriveItemOpts {
     pub ident: Ident,
     pub data: Data<(), DeriveItemFieldOpts>,
+    pub attrs: Vec<Attribute>,
 
     #[darling(default, rename = "wrapper")]
     pub wrapper_opts: WrapperOpts,
@@ -361,12 +362,23 @@ pub struct DeriveItemFieldOpts {
 }
 impl ValidateScoped for DeriveItemFieldOpts {}
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Default, FromMeta)]
+#[darling(rename_all = "snake_case")]
+pub enum PassthroughAttributeContext {
+    #[default]
+    All,
+    Nest,
+    Extra,
+    Wrapper,
+}
 #[derive(Debug, Clone, FromMeta)]
 pub struct PassthroughAttribute {
     #[darling(default)]
     pub nest: PathList,
     #[darling(multiple)]
     pub attr: Vec<syn::Meta>,
+    #[darling(default)]
+    pub context: Option<PassthroughAttributeContext>,
 }
 
 /// Wrap field `nest_in` attribute options

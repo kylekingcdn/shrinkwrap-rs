@@ -2,12 +2,12 @@
 
 use darling::ToTokens;
 use darling::util::PathList;
-use proc_macro2::TokenStream;
+use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote};
 use std::collections::HashMap;
 use syn::{Ident, Path, Type};
 
-use crate::parse::types::{ExtraOpts, NestMapStrategy, NestOpts, WrapperOpts};
+use crate::parse::types::{ExtraOpts, NestMapStrategy, NestOpts, PassthroughAttributeContext, WrapperOpts};
 
 // -- TODO, add opt structs as child, only define newly required fields
 
@@ -15,8 +15,9 @@ use crate::parse::types::{ExtraOpts, NestMapStrategy, NestOpts, WrapperOpts};
 pub struct Wrapper {
     pub struct_name: Ident,
     pub struct_docs: String,
-    pub derive: PathList,
+    pub struct_attrs: Vec<TokenStream>,
 
+    pub derive: PathList,
     pub data_field_name: Ident,
     pub data_struct_name: Ident,
     pub data_field_docs: String,
@@ -27,7 +28,7 @@ pub struct Wrapper {
     pub extra_field_docs: String,
 }
 impl Wrapper {
-    pub fn new(opts: WrapperOpts, root_ident: &Ident, extra_ident: &Ident) -> Self {
+    pub fn new(opts: WrapperOpts, root_ident: &Ident, extra_ident: &Ident, struct_attrs: Vec<TokenStream>) -> Self {
         let struct_name = opts.struct_name(root_ident);
         let data_field_name = opts.data_field_name();
         let extra_field_name = opts.extra_field_name();
@@ -43,6 +44,7 @@ impl Wrapper {
         Self {
             struct_name,
             struct_docs: doc,
+            struct_attrs,
             derive,
             data_field_name,
             data_struct_name: root_ident.clone(),
@@ -126,6 +128,8 @@ impl ToTokens for Wrapper {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         let derives = build_derives_token(&self.derive);
         let doc = build_docs_token(&self.struct_docs);
+        let struct_attrs = build_attributes_token(&self.struct_attrs);
+        // expand_debug(&struct_attrs, "Wrapper", "to_tokens");
         let Self {
             struct_name,
             data_field_name,
@@ -148,6 +152,7 @@ impl ToTokens for Wrapper {
             #[automatically_derived]
             #doc
             #derives
+            #struct_attrs
             pub struct #struct_name {
                 #data_doc
                 #flatten_attr
@@ -156,7 +161,7 @@ impl ToTokens for Wrapper {
                 pub #extra_field_name: #extra_struct_name,
             }
         };
-
+        // expand_tokens(&output, "Wrapper::ToTokens");
         tokens.extend(output);
     }
 }
@@ -170,17 +175,19 @@ pub struct ExtraNestField {
 pub struct Extra {
     pub struct_name: Ident,
     pub struct_docs: String,
+    pub struct_attrs: Vec<TokenStream>,
     pub derive: PathList,
 
     pub nests: Vec<ExtraNestField>,
 }
 impl Extra {
-    pub fn new(opts: &ExtraOpts, origin_ident: &Ident, nests: Vec<ExtraNestField>) -> Self {
+    pub fn new(opts: &ExtraOpts, origin_ident: &Ident, struct_attrs: Vec<TokenStream>, nests: Vec<ExtraNestField>) -> Self {
         let struct_name = opts.struct_name(origin_ident);
 
         Self {
             struct_name,
             struct_docs: opts.doc.clone(),
+            struct_attrs,
             derive: opts.derive.clone(),
             nests,
         }
@@ -213,6 +220,7 @@ impl ToTokens for Extra {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         let derives = build_derives_token(&self.derive);
         let doc = build_docs_token(&self.struct_docs);
+        let struct_attrs = build_attributes_token(&self.struct_attrs);
         let Self { struct_name, .. } = &self;
 
         let mut nest_field_tokens = TokenStream::new();
@@ -236,11 +244,12 @@ impl ToTokens for Extra {
             #[automatically_derived]
             #doc
             #derives
+            #struct_attrs
             pub struct #struct_name {
                 #nest_field_tokens
             }
         };
-
+        // expand_tokens(&output, "Extra::ToTokens");
         tokens.extend(output);
     }
 }
@@ -249,6 +258,7 @@ impl ToTokens for Extra {
 pub struct Nest {
     pub struct_name: Ident,
     pub struct_docs: String,
+    pub struct_attrs: Vec<TokenStream>,
     pub derive: PathList,
 
     pub origin_ident: Ident,
@@ -259,17 +269,18 @@ pub struct Nest {
 
     /// false if under root extra
     pub is_nested: bool,
-    /// Some if this nest has additional nests in it's heirachy.
-    /// The value is the type ident for the extra struct type
-    pub with_extra: Option<ExtraNestField>,
+    // /// Some if this nest has additional nests in it's heirachy.
+    // /// The value is the type ident for the extra struct type
+    // pub with_extra: Option<ExtraNestField>,
 }
 impl Nest {
     pub fn new(
         opts: NestOpts,
         root_ident: &Ident,
+        struct_attrs: Vec<TokenStream>,
         fields: Vec<NestField>,
         field_attrs: Vec<NestFieldAttrs>,
-        with_extra: Option<ExtraNestField>,
+        // with_extra: Option<ExtraNestField>,
     ) -> Self {
         let struct_name = opts.struct_name(root_ident);
         let origin_ident = opts.origin(root_ident).clone();
@@ -283,13 +294,14 @@ impl Nest {
         Self {
             struct_name,
             struct_docs: doc,
+            struct_attrs,
             derive,
             origin_ident,
             field_type,
             field_attrs,
             fields,
             is_nested,
-            with_extra,
+            // with_extra,
         }
     }
 }
@@ -311,6 +323,7 @@ impl ToTokens for Nest {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         let derives = build_derives_token(&self.derive);
         let doc = build_docs_token(&self.struct_docs);
+        let struct_attrs = build_attributes_token(&self.struct_attrs);
         let Self {
             struct_name,
             field_type,
@@ -318,6 +331,7 @@ impl ToTokens for Nest {
         } = &self;
 
         let mut field_tokens = TokenStream::new();
+
 
         for NestField {
             name,
@@ -344,23 +358,17 @@ impl ToTokens for Nest {
                 pub #name: #field_type,
             });
         }
-        if let Some(extra_field) = &self.with_extra {
-            let name = &extra_field.field_name;
-            let ty = &extra_field.type_ident;
-            field_tokens.extend(quote! {
-                pub #name: #ty,
-            });
-        }
 
         let output = quote! {
             #[automatically_derived]
             #doc
             #derives
+            #struct_attrs
             pub struct #struct_name {
                 #field_tokens
             }
         };
-
+        // expand_tokens(&output, "Nest::ToTokens");
         tokens.extend(output);
         if !self.is_nested {
             tokens.extend(self.to_nest_impl());
@@ -384,6 +392,63 @@ impl Eq for NestField {}
 pub struct NestFieldAttrs {
     pub field_name: Ident,
     pub attributes_token: TokenStream,
+}
+
+#[derive(Debug, Clone, Default)]
+pub enum NestSelection {
+    #[default]
+    Unrestricted,
+    Restricted(Vec<String>),
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct NestScopedAttrs {
+    pub nests: NestSelection,
+    pub attributes_token: TokenStream,
+    pub nests_span: Option<Span>,
+    pub context: PassthroughAttributeContext,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) enum StructGenScope {
+    Wrapper,
+    Extra,
+    Nest
+}
+impl NestScopedAttrs {
+    pub fn has_struct_scope(&self, scope: StructGenScope) -> bool {
+        match self.context {
+            PassthroughAttributeContext::All => true,
+            PassthroughAttributeContext::Wrapper => scope == StructGenScope::Wrapper,
+            PassthroughAttributeContext::Extra => scope == StructGenScope::Extra,
+            PassthroughAttributeContext::Nest => scope == StructGenScope::Nest,
+        }
+    }
+    pub fn has_struct_scope_for_nest(&self, scope: StructGenScope, nest_id: &str) -> bool {
+        if !self.has_struct_scope(scope) {
+            return false;
+        }
+        match &self.nests {
+            NestSelection::Unrestricted => true,
+            NestSelection::Restricted(ids) => ids.iter().any(|id| id == nest_id)
+        }
+    }
+    pub fn is_permitted_by_filter(&self, scope: StructGenScope, assoc_nest_ids: &Vec<&String>) -> bool {
+        if !self.has_struct_scope(scope) {
+            return false;
+        }
+        match &self.nests {
+            NestSelection::Unrestricted => true,
+            NestSelection::Restricted(permitted_nest_ids) => {
+                for permitted_id in permitted_nest_ids {
+                    if assoc_nest_ids.contains(&permitted_id) {
+                        return true;
+                    }
+                }
+                false
+            }
+        }
+    }
 }
 
 /// Provides a mapping of a nest's defined origin (or root) to nest opts
@@ -419,6 +484,18 @@ fn build_derives_token(derives: &PathList) -> TokenStream {
         default_names
     };
     quote! { #[derive(#names)] }
+}
+fn build_attribute_token(attribute: &TokenStream, tokens: &mut TokenStream) {
+    if !attribute.is_empty() {
+        tokens.extend(quote! { #[#attribute] })
+    }
+}
+fn build_attributes_token(attributes: &Vec<TokenStream>) -> TokenStream {
+    let mut out = quote!();
+    for attr in attributes {
+        build_attribute_token(attr, &mut out);
+    }
+    out
 }
 
 pub(crate) fn build_from_impl(

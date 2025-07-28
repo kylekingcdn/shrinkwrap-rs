@@ -1,7 +1,8 @@
 use darling::FromMeta;
+use proc_macro_error2::abort;
 use quote::{ToTokens, quote};
 use std::collections::{HashMap, HashSet};
-use syn::{Ident, Type};
+use syn::{spanned::Spanned, Attribute, Ident, Type};
 
 mod types;
 
@@ -22,18 +23,21 @@ pub(crate) fn generate_entrypoint(root: DeriveItemOpts) -> proc_macro2::TokenStr
 
     validate_nests(&nest_fields, nest_ids);
 
+    // destructure primary opts
     let DeriveItemOpts {
         wrapper_opts,
         extra_opts,
         nest_opts,
         ident: root_ident,
+        attrs,
         ..
     } = root;
-    let nest_attrs = parse_field_attrs(&root_ident, &origin_fields, &nest_fields);
-    if let Err(error) = nest_attrs {
-        return syn::Error::new(root_ident.span(), error).into_compile_error();
-    }
-    let nest_attrs = nest_attrs.unwrap();
+
+    // parse struct and field attrs
+    let passthrough_attr_ident = Ident::new("shrinkwrap_attr", root_ident.span());
+    let struct_attrs = parse_forward_attrs(&passthrough_attr_ident, &attrs, true);
+    validate_forward_attrs(&passthrough_attr_ident, &struct_attrs, &nest_fields);
+    let field_attrs = parse_field_attrs(&passthrough_attr_ident, &origin_fields, &nest_fields);
 
     let extra_ident = extra_opts.struct_name(&root_ident);
     let nest_origin_map = build_origin_map(nest_opts, &root_ident);
@@ -60,8 +64,6 @@ pub(crate) fn generate_entrypoint(root: DeriveItemOpts) -> proc_macro2::TokenStr
         true => first_transform,
         false => None,
     };
-    // cloned for later use after move
-    let extra_field_name = wrapper_opts.extra_field_name();
 
     let mut output = quote!();
     generate_wrapper_struct(
@@ -69,6 +71,7 @@ pub(crate) fn generate_entrypoint(root: DeriveItemOpts) -> proc_macro2::TokenStr
         &root_ident,
         &extra_ident,
         &nest_origin_map,
+        &struct_attrs,
         &mut output,
         all_from_impl,
         transform_all_with,
@@ -77,95 +80,146 @@ pub(crate) fn generate_entrypoint(root: DeriveItemOpts) -> proc_macro2::TokenStr
         &extra_opts,
         &root_ident,
         &nest_origin_map,
+        &struct_attrs,
         &mut output,
         all_from_impl,
     );
     generate_nest_structs(
-        nest_origin_map,
-        &extra_field_name,
-        &extra_opts,
         &root_ident,
+        nest_origin_map,
+        &struct_attrs,
         nest_fields,
-        nest_attrs,
+        field_attrs,
         &mut output,
     );
-
     output
 }
 
-pub(crate) fn parse_field_attrs<'a>(
-    root_ident: &'a Ident,
-    fields: &'a Vec<DeriveItemFieldOpts>,
-    nest_fields: &'a NestFieldMap<'a>,
-) -> Result<NestFieldAttrMap<'a>, syn::Error> {
-    let mut map = NestFieldAttrMap::new();
+/// Parses nest id/attribute pairings to be copied into the derived structs
+pub(crate) fn parse_forward_attrs(
+    forward_ident: &Ident,
+    attrs: &Vec<Attribute>,
+    allow_context: bool,
+) -> Vec<NestScopedAttrs> {
+    let mut all_nest_attrs = Vec::new();
 
-    let passthrough_attr_ident = Ident::new("shrinkwrap_attr", root_ident.span());
-    for field in fields {
-        for attr in &field.attrs {
-            if attr.path().get_ident() == Some(&passthrough_attr_ident) {
-                let attr_struct = PassthroughAttribute::from_meta(&attr.meta)
-                    .map_err(|e| syn::Error::new(root_ident.span(), e))?;
+    for attr in attrs {
+        // only handle attributes that are nested under the specified forward ident (e.g. shrinkwrap_attr)
+        if attr.path().get_ident() != Some(forward_ident) {
+            continue;
+        }
+        match PassthroughAttribute::from_meta(&attr.meta) {
+            Err(error) => {
+                // panic!("{error:#?}");
+                abort!(error.span(), error)
+            },
+            Ok(attr_struct) => {
+                if attr_struct.context.is_some() && !allow_context {
+                    abort!(attr.span(), "Attribute option `context` is not permitted on field attributes. `context` may only be used on struct attributes.");
+                }
+                // resolve list of nest IDs
+                let mut nest_ids = Vec::new();
+                for nest_id in attr_struct.nest.to_strings() {
+                    if nest_ids.contains(&nest_id) {
+                        abort!(attr.span(), "Nest '{nest_id}' specified multiple times (defined in `#[{forward_ident}(...)]`)");
+                    }
+                    nest_ids.push(nest_id.clone());
+                }
+                let nest_selection = if nest_ids.is_empty() {
+                    NestSelection::Unrestricted
+                } else {
+                    NestSelection::Restricted(nest_ids)
+                };
 
+                // push to scoped attrs vec
                 for attr in attr_struct.attr {
                     let attr_contents = &attr.require_list().unwrap().tokens;
-                    let token = attr_contents.to_token_stream();
-                    let field_ident = field.ident.clone().unwrap();
-                    let field_attr = NestFieldAttrs {
-                        field_name: field_ident,
-                        attributes_token: token,
+                    let attributes_token = attr_contents.to_token_stream();
+
+                    let nest_attrs = NestScopedAttrs {
+                        attributes_token,
+                        nests: nest_selection.clone(),
+                        nests_span: Some(attr.span()),
+                        context: attr_struct.context.unwrap_or_default(),
                     };
-                    let mut visited_nest_ids = HashSet::new();
-                    if attr_struct.nest.is_empty() {
-                        // add to all
-                        for nest_id in nest_fields.keys() {
-                            if !map.contains_key(nest_id) {
-                                map.insert(nest_id.to_owned(), vec![]);
-                            }
-                            let fa = field_attr.clone();
-                            map.get_mut(nest_id).unwrap().push(fa);
-                            visited_nest_ids.insert(nest_id.to_owned());
-                        }
-                    } else {
-                        // restrict to specified nests
-                        for nest_id in attr_struct.nest.to_strings() {
-                            if !nest_fields.contains_key(&nest_id) {
-                                panic!(
-                                    "Nest '{nest_id}' doesn't exist (defined in `#[shrinkwrap_attr(...)]` field {})",
-                                    field_attr.field_name
-                                );
-                            }
-                            if !map.contains_key(&nest_id) {
-                                map.insert(nest_id.to_owned(), vec![]);
-                            } else if visited_nest_ids.contains(&nest_id) {
-                                panic!(
-                                    "Nest '{nest_id}' specified multiple times (defined in `#[shrinkwrap_attr(...)]` field {})",
-                                    field_attr.field_name
-                                );
-                            }
-                            map.get_mut(&nest_id).unwrap().push(field_attr.clone());
-                            visited_nest_ids.insert(nest_id.to_owned());
-                        }
-                    }
+                    all_nest_attrs.push(nest_attrs);
                 }
             }
         }
     }
 
-    Ok(map)
+    all_nest_attrs
 }
 
+pub(crate) fn parse_field_attrs<'a>(
+    forward_ident: &Ident,
+    fields: &'a Vec<DeriveItemFieldOpts>,
+    nest_fields: &'a NestFieldMap<'a>,
+) -> NestFieldAttrMap<'a> {
+    let mut field_attr_map = HashMap::new();
+
+    for field in fields {
+        let field_ident = field.ident.clone().unwrap();
+        let parsed_attrs = parse_forward_attrs(forward_ident, &field.attrs, false);
+        validate_forward_attrs(forward_ident, &parsed_attrs, nest_fields);
+        field_attr_map.insert(field_ident, parsed_attrs);
+    }
+    build_nest_field_attr_map(field_attr_map, nest_fields)
+}
+
+pub(crate) fn validate_forward_attrs<'a>(forward_ident: &Ident, attrs: &Vec<NestScopedAttrs>, nest_fields: &'a NestFieldMap<'a>) {
+    for attr in attrs {
+        if let NestSelection::Restricted(nest_ids) = &attr.nests {
+            for nest_id in nest_ids {
+                if !nest_fields.contains_key(nest_id.as_str()) {
+                    abort!(attr.nests_span.unwrap_or(forward_ident.span()), "Nest '{nest_id}' doesn't exist (defined in `#[shrinkwrap_attr(...)]`)");
+                }
+            }
+        }
+    }
+}
+
+/// creates a nest-keyed attr map from a field-keyed map
+pub(crate) fn build_nest_field_attr_map<'a>(field_attr_map: HashMap<Ident, Vec<NestScopedAttrs>>, nest_fields: &'a NestFieldMap<'a>) -> NestFieldAttrMap<'a> {
+    let mut nest_map = HashMap::new();
+
+    let all_nest_ids: Vec<String> = nest_fields.keys().cloned().collect();
+    for (field, attrs) in field_attr_map {
+        for attr in attrs {
+            let attr_nest_ids = match attr.nests {
+                NestSelection::Unrestricted => all_nest_ids.clone(),
+                NestSelection::Restricted(nest_ids) => nest_ids,
+            };
+            for nest_id in attr_nest_ids {
+                if !nest_map.contains_key(&nest_id) {
+                    nest_map.insert(nest_id.clone(), Vec::new());
+                }
+                nest_map.entry(nest_id).and_modify(|attr_list| attr_list.push(NestFieldAttrs{
+                    field_name: field.clone(),
+                    attributes_token: attr.attributes_token.clone()
+                }));
+            }
+        }
+    }
+
+    nest_map
+}
+
+// FIXME: arg count - add wrapper structs (oh boy more wrapping)
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn generate_wrapper_struct(
     opts: WrapperOpts,
     root_ident: &Ident,
     extra_ident: &Ident,
     origin_map: &NestOriginMap,
+    struct_attrs: &Vec<NestScopedAttrs>,
     tokens: &mut proc_macro2::TokenStream,
     from_impl: bool,
     from_with_impl: Option<Type>,
 ) {
     let mut impl_tokens = quote!();
-    let wrapper = Wrapper::new(opts, root_ident, extra_ident);
+
+    let mut wrapper_attrs = Vec::new();
     let mut root_extra_fields = Vec::new();
     if let Some(nests) = origin_map.get(root_ident) {
         for nest in nests {
@@ -176,6 +230,19 @@ pub(crate) fn generate_wrapper_struct(
             });
         }
     }
+    let assoc_nest_ids: Vec<&String> = origin_map.get(root_ident).map(|nests| {
+        nests.iter().map(|n| &n.id).collect()
+    }).unwrap_or_default();
+
+    for struct_attr in struct_attrs {
+        if struct_attr.is_permitted_by_filter(StructGenScope::Wrapper, &assoc_nest_ids) {
+            wrapper_attrs.push(struct_attr.attributes_token.clone());
+        }
+    }
+
+    let wrapper = Wrapper::new(opts, root_ident, extra_ident, wrapper_attrs);
+    expand_debug(&wrapper, "Wrapper", "generate_wrapper_struct");
+
     if from_impl {
         impl_tokens.extend(wrapper.to_wrapped_impl());
         impl_tokens.extend(wrapper.build_from_data_impl());
@@ -190,12 +257,15 @@ pub(crate) fn generate_extra_structs(
     opts: &ExtraOpts,
     root_ident: &Ident,
     origin_map: &NestOriginMap,
+    struct_attrs: &Vec<NestScopedAttrs>,
     tokens: &mut proc_macro2::TokenStream,
     from_impl: bool,
 ) {
     for (origin_ident, nest_opts) in origin_map {
+        let mut extra_attrs = Vec::new();
         let mut nest_fields = Vec::new();
         // build a list of all children nests for generating the struct definition
+        // also simultaneously resolve any struct attributes
         for nest in nest_opts {
             let field = ExtraNestField {
                 field_name: nest.field_name(),
@@ -204,8 +274,21 @@ pub(crate) fn generate_extra_structs(
             };
             nest_fields.push(field);
         }
+
+        // add any relevant struct-level attributes - count is likely very low, won't optimize
+        let assoc_nest_ids: Vec<&String> = origin_map.get(origin_ident).map(|nests| {
+            nests.iter().map(|n| &n.id).collect()
+        }).unwrap_or_default();
+        for struct_attr in struct_attrs {
+            if struct_attr.is_permitted_by_filter(StructGenScope::Extra, &assoc_nest_ids) {
+                extra_attrs.push(struct_attr.attributes_token.clone());
+            }
+        }
+
         let mut impl_tokens = quote!();
-        let extra = Extra::new(opts, origin_ident, nest_fields);
+        let extra = Extra::new(opts, origin_ident, extra_attrs, nest_fields);
+        expand_debug(&extra, "Extra", "generate_extra_structs");
+
         if from_impl && origin_ident == root_ident {
             impl_tokens.extend(extra.build_from_data_impl(origin_ident))
         }
@@ -215,10 +298,9 @@ pub(crate) fn generate_extra_structs(
 }
 
 pub(crate) fn generate_nest_structs(
-    origin_map: NestOriginMap,
-    extra_field_name: &Ident,
-    extra_opts: &ExtraOpts,
     root_ident: &Ident,
+    origin_map: NestOriginMap,
+    struct_attrs: &Vec<NestScopedAttrs>,
     nest_fields: NestFieldMap,
     nest_field_attrs: NestFieldAttrMap,
     tokens: &mut proc_macro2::TokenStream,
@@ -232,24 +314,24 @@ pub(crate) fn generate_nest_structs(
     }
     origin_map.into_iter().for_each(|(_, origin_nests)| {
         for nest in origin_nests {
-            // fixme: bad clone
+            let mut nest_attrs = Vec::new();
             let fields = nest_fields
                 .get(&nest.id)
                 .cloned()
                 .unwrap_or(Vec::<NestField>::new());
-            let nest_ident = nest.struct_name(root_ident);
-            let has_children =
-                child_counts.get(&nest_ident).map(|count| *count > 0i32) == Some(true);
-            let with_extra: Option<ExtraNestField> = if has_children {
-                Some(ExtraNestField {
-                    field_name: extra_field_name.clone(),
-                    type_ident: extra_opts.struct_name(&nest_ident),
-                })
-            } else {
-                None
-            };
-            let attrs = nest_field_attrs.get(&nest.id).cloned().unwrap_or_default();
-            Nest::new(nest, root_ident, fields, attrs, with_extra).to_tokens(tokens)
+            let field_attrs = nest_field_attrs.get(&nest.id).cloned().unwrap_or_default();
+
+            // add any relevant struct-level attributes - count is likely very low, won't optimize
+            for struct_attr in struct_attrs {
+                if struct_attr.has_struct_scope_for_nest(StructGenScope::Nest, &nest.id) {
+                    nest_attrs.push(struct_attr.attributes_token.clone());
+                }
+            }
+
+            let gen_nest = Nest::new(nest, root_ident, nest_attrs, fields, field_attrs);
+            expand_debug(&gen_nest, "Nest", "generate_nest_structs");
+            gen_nest.to_tokens(tokens);
+
         }
     });
 }
@@ -365,7 +447,7 @@ mod expand {
     /// Dumps the type to stderr using it's Debug impl, but only if the `expand` feature is enabled. Otherwise this is a no-op
     pub(crate) fn expand_debug<T: std::fmt::Debug>(t: &T, type_name: &'static str, fn_name: &'static str) {
         eprintln!("\n{T_BOLD}{T_C_BLUE}------------------------------------------------{T_RESET}");
-        eprintln!("{T_B_BLUE}[{type_name}]{T_B_RESET} {T_C_BLUE}{fn_name}:{T_RESET} \n{t:#?}\n");
+        eprintln!("{T_BOLD}{T_B_BLUE}{T_C_BLACK}[{type_name}]{T_B_RESET} {T_C_BLUE}{fn_name}:{T_RESET} \n{t:#?}\n");
         eprintln!("{T_BOLD}{T_C_BLUE}------------------------------------------------{T_RESET}");
     }
 
@@ -381,7 +463,7 @@ mod expand {
                 eprintln!("{T_BOLD}{T_C_BLUE}------------------------------------------------{T_RESET}");
             }
             Err(err) => {
-                eprintln!("{T_BOLD}{T_B_RED}{fn_name}:{T_RESET} Failed to render formatted output - err: {err}.");
+                eprintln!("{T_BOLD}{T_B_RED}{T_C_BLACK}{fn_name}:{T_RESET} Failed to render formatted output - err: {err}.");
                 eprintln!("Output will be unformatted.\n");
                 expand_tokens_unfmt(tokens, fn_name)
             }
@@ -395,7 +477,7 @@ mod expand {
         match syn::parse_file(token_stream.to_string().as_str()) {
             Ok(tokens_file) => {
                 let tokens_fmt = prettyplease::unparse(&tokens_file);
-                eprintln!("{T_B_BLUE}[{type_name}]{T_RESET} {T_BOLD}{T_C_BLUE}{fn_name}:{T_RESET} \n{}", &tokens_fmt);
+                eprintln!("{T_BOLD}{T_B_BLUE}{T_C_BLACK}[{type_name}]{T_RESET} {T_BOLD}{T_C_BLUE}{fn_name}:{T_RESET} \n{}", &tokens_fmt);
                 eprintln!("{T_BOLD}{T_C_BLUE}------------------------------------------------{T_RESET}");
             }
             Err(err) => {
