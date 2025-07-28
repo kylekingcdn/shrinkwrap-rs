@@ -75,7 +75,6 @@ impl Wrapper {
     pub fn to_wrapped_impl(&self) -> TokenStream {
         let wrapper_struct_name = &self.struct_name;
         let data_struct_name = &self.data_struct_name;
-        eprintln!("{self:#?}");
 
         quote! {
             impl shrinkwrap::wrap::Wrap for #data_struct_name {
