@@ -9,6 +9,10 @@ license = "MIT"
 
 [lib]
 
+[features]
+default = []
+expand = ["shrinkwrap-macros/expand"]
+
 [dependencies]
 serde = { version = "1.0.219", features = ["derive"] }
 shrinkwrap-macros = { version = "0.1.2", path = "../shrinkwrap-macros" }
