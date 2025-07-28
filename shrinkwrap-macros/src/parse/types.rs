@@ -1,7 +1,7 @@
 #![doc = "Types used for deserializing attributes (via Darling)"]
 
 use darling::ast::Data;
-use darling::util::{Override, PathList};
+use darling::util::{Flag, Override, PathList};
 use darling::{FromDeriveInput, FromField, FromMeta};
 use heck::AsUpperCamelCase;
 use quote::format_ident;
@@ -88,11 +88,12 @@ pub struct WrapperOpts {
     #[darling(default = String::new)]
     pub data_field_doc: String,
 
-    /// Serializes data fields inline with the wrapper via `#[serde(flatten)`.
+    /// Serializes data contents into the wrapper inline via `#[serde(flatten)`.
     ///
-    /// Set to false to disable and retain nesting during serialization.
-    #[darling(default = Self::flatten_data_override_default)]
-    pub flatten_data: Override<bool>,
+    /// **NOTE:** `#[serde(flatten)]` is applied to the wrapper data field, **and not the wrapper itself**
+    ///
+    /// `flatten = false` will disable data flattening and retain nesting during serialization.
+    flatten: Option<Override<bool>>,
 
     /// Field name for extra struct, defaults to data
     #[darling(default)]
@@ -121,11 +122,13 @@ impl WrapperOpts {
             None => Self::data_field_name_default(),
         }
     }
-    fn flatten_data_default() -> bool {
-        true
-    }
-    fn flatten_data_override_default() -> Override<bool> {
-        Some(Self::flatten_data_default()).into()
+    pub fn flatten(&self) -> bool {
+        match self.flatten {
+            Some(Override::Inherit)
+            | Some(Override::Explicit(true))
+            | None => true,
+            Some(Override::Explicit(false)) => false,
+        }
     }
     fn extra_field_name_default() -> Ident {
         format_ident!("extra")

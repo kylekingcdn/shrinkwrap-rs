@@ -31,11 +31,11 @@ impl Wrapper {
         let struct_name = opts.struct_name(root_ident);
         let data_field_name = opts.data_field_name();
         let extra_field_name = opts.extra_field_name();
+        let data_flattened = opts.flatten();
         let WrapperOpts {
             doc,
             derive,
             data_field_doc,
-            flatten_data,
             extra_field_doc,
             ..
         } = opts;
@@ -47,7 +47,7 @@ impl Wrapper {
             data_field_name,
             data_struct_name: root_ident.clone(),
             data_field_docs: data_field_doc,
-            data_flattened: flatten_data.unwrap_or_default(),
+            data_flattened,
             extra_field_name,
             extra_struct_name: extra_ident.clone(),
             extra_field_docs: extra_field_doc,
