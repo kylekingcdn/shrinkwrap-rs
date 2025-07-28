@@ -102,7 +102,7 @@ impl Wrapper {
         for nest in root_nests {
             let nest_field_name = &nest.field_name;
             extra_fields.extend(quote! {
-                #nest_field_name: transform.transform_to_nest(&self),
+                #nest_field_name: transform.transform_to_nest(&self, options),
             })
         }
         quote! {
@@ -110,7 +110,7 @@ impl Wrapper {
             impl ::shrinkwrap::wrap::WrapWith<#transformer_type> for #data_struct_name {
                 type Wrapper = #wrapper_struct_name;
 
-                fn to_wrapped_with(self, transform: &#transformer_type) -> #wrapper_struct_name {
+                fn to_wrapped_with(self, transform: &#transformer_type, options: &<#transformer_type as ::shrinkwrap::Transform>::Options) -> #wrapper_struct_name {
                     #wrapper_struct_name {
                         #extra_field_name: #extra_struct_name {
                             #extra_fields

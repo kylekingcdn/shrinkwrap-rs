@@ -1,3 +1,10 @@
+/// Marker trait for a transform impl
+///
+/// Additionally provides the type for the options parameter used in [`TransformToNest`] and [`ToNestWith`]
+pub trait Transform {
+    type Options;
+}
+
 /// Converts data to a given nest.
 ///
 /// This shouldn't need to be implemented when using the `Wrap` derive macro.
@@ -10,8 +17,8 @@ pub trait ToNest<N> {
 }
 
 /// For proper functionality, this should be implemented by any nests configured to use a dedicated transform handler (rather than providing a `From<&Data>` implementation)
-pub trait TransformToNest<D, N> {
-    fn transform_to_nest(&self, data: &D) -> N;
+pub trait TransformToNest<D, N>: Transform {
+    fn transform_to_nest(&self, data: &D, options: &Self::Options) -> N;
 }
 
 /// Not intended for external implementation.
@@ -23,10 +30,13 @@ pub trait ToNestWith<N, T>: Sized
 where
     T: TransformToNest<Self, N>,
 {
-    fn to_nest_with(&self, transform: &T) -> N {
-        transform.transform_to_nest(self)
+    fn to_nest_with(&self, transform: &T, options: &T::Options) -> N {
+        transform.transform_to_nest(self, options)
     }
 }
-
+//
 /// Blanket implementation providing `to_nest_with(transform)` for data structs that have a corresponding transform impl (`impl TransformToNest<Data, Nest> for MyTransform`)
-impl<D, N, T> ToNestWith<N, T> for D where T: TransformToNest<D, N> {}
+impl<D, N, T> ToNestWith<N, T> for D
+where
+    T: TransformToNest<D, N>
+{}
