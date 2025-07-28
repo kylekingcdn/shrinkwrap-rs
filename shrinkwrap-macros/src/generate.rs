@@ -1,3 +1,4 @@
+use darling::FromMeta;
 use quote::{ToTokens, quote};
 use std::collections::{HashMap, HashSet};
 use syn::{Ident, Type};
@@ -5,14 +6,9 @@ use syn::{Ident, Type};
 mod types;
 
 use crate::parse::types::{
-    DeriveItemFieldOpts, DeriveItemOpts, ExtraOpts, NestMapStrategy, NestOpts, WrapperOpts,
+    DeriveItemFieldOpts, DeriveItemOpts, ExtraOpts, NestMapStrategy, NestOpts, WrapperOpts, PassthroughAttribute,
 };
 use types::*;
-
-/// Provides a mapping of a nest's defined origin (or root) to nest opts
-pub(crate) type NestOriginMap<'a> = HashMap<Ident, Vec<NestOpts>>;
-/// Provides a mapping of a nest ID to a list of fields that should be mapped to the assoc nest.
-pub(crate) type NestFieldMap<'a> = HashMap<String, Vec<NestField>>;
 
 pub(crate) fn generate_entrypoint(root: DeriveItemOpts) -> proc_macro2::TokenStream {
     let origin_fields = root
@@ -32,6 +28,12 @@ pub(crate) fn generate_entrypoint(root: DeriveItemOpts) -> proc_macro2::TokenStr
         ident: root_ident,
         ..
     } = root;
+    let nest_attrs = parse_field_attrs(&root_ident, &origin_fields, &nest_fields);
+    if let Err(error) = nest_attrs {
+        return syn::Error::new(root_ident.span(), error).into_compile_error();
+    }
+    let nest_attrs = nest_attrs.unwrap();
+
     let extra_ident = extra_opts.struct_name(&root_ident);
     let nest_origin_map = build_origin_map(nest_opts, &root_ident);
     let root_nests: Vec<&NestOpts> = nest_origin_map
@@ -83,10 +85,62 @@ pub(crate) fn generate_entrypoint(root: DeriveItemOpts) -> proc_macro2::TokenStr
         &extra_opts,
         &root_ident,
         nest_fields,
+        nest_attrs,
         &mut output,
     );
 
     output
+}
+
+pub(crate) fn parse_field_attrs<'a>(root_ident: &'a Ident, fields: &'a Vec<DeriveItemFieldOpts>, nest_fields: &'a NestFieldMap<'a>) ->  Result<NestFieldAttrMap<'a>, syn::Error> {
+    let mut map = NestFieldAttrMap::new();
+
+    let passthrough_attr_ident = Ident::new("shrinkwrap_attr", root_ident.span());
+    for field in fields {
+for attr in &field.attrs {
+            if attr.path().get_ident() == Some(&passthrough_attr_ident) {
+                let attr_struct = PassthroughAttribute::from_meta(&attr.meta).map_err(|e| syn::Error::new(root_ident.span(), e))?;
+
+                for attr in attr_struct.attr {
+                    let attr_contents = &attr.require_list().unwrap().tokens;
+                    let token = attr_contents.to_token_stream();
+                    let field_ident = field.ident.clone().unwrap();
+                    let field_attr = NestFieldAttrs {
+                        field_name: field_ident,
+                        attributes_token: token,
+                    };
+                    let mut visited_nest_ids = HashSet::new();
+                    if attr_struct.nest.is_empty() {
+                        // add to all
+                        for nest_id in nest_fields.keys() {
+                            if !map.contains_key(nest_id) {
+                                map.insert(nest_id.to_owned(), vec![]);
+                            }
+                            let fa = field_attr.clone();
+                            map.get_mut(nest_id).unwrap().push(fa);
+                            visited_nest_ids.insert(nest_id.to_owned());
+                        }
+                    } else {
+                        // restrict to specified nests
+                        for nest_id in attr_struct.nest.to_strings() {
+                            if !nest_fields.contains_key(&nest_id) {
+                                panic!("Nest '{nest_id}' doesn't exist (defined in `#[shrinkwrap_attr(...)]` field {})", field_attr.field_name);
+                            }
+                            if !map.contains_key(&nest_id) {
+                                map.insert(nest_id.to_owned(), vec![]);
+                            } else if visited_nest_ids.contains(&nest_id) {
+                                panic!("Nest '{nest_id}' specified multiple times (defined in `#[shrinkwrap_attr(...)]` field {})", field_attr.field_name);
+                            }
+                            map.get_mut(&nest_id).unwrap().push(field_attr.clone());
+                            visited_nest_ids.insert(nest_id.to_owned());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(map)
 }
 
 pub(crate) fn generate_wrapper_struct(
@@ -152,6 +206,7 @@ pub(crate) fn generate_nest_structs(
     extra_opts: &ExtraOpts,
     root_ident: &Ident,
     nest_fields: NestFieldMap,
+    nest_field_attrs: NestFieldAttrMap,
     tokens: &mut proc_macro2::TokenStream,
 ) {
     let mut child_counts = HashMap::new();
@@ -179,7 +234,8 @@ pub(crate) fn generate_nest_structs(
             } else {
                 None
             };
-            Nest::new(nest, root_ident, fields, with_extra).to_tokens(tokens)
+            let attrs = nest_field_attrs.get(&nest.id).cloned().unwrap_or_default();
+            Nest::new(nest, root_ident, fields, attrs, with_extra).to_tokens(tokens)
         }
     });
 }

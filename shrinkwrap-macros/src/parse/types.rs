@@ -4,7 +4,8 @@ use darling::ast::{Data, NestedMeta};
 use darling::util::{Override, PathList};
 use darling::{FromDeriveInput, FromField, FromMeta, FromAttributes};
 use heck::AsUpperCamelCase;
-use quote::format_ident;
+use proc_macro2::TokenStream;
+use quote::{format_ident, ToTokens};
 use syn::{Attribute, Ident, Path, Type, Meta};
 
 // - validate trait
@@ -24,7 +25,7 @@ pub(crate) trait ValidateScoped {
 /// Root derive options
 #[derive(Debug, Clone, FromDeriveInput)]
 #[darling(
-    attributes(shrinkwrap),
+    attributes(shrinkwrap, shrinkwrap_attr),
     forward_attrs(allow, doc, cfg),
     supports(struct_named)
 )]
@@ -289,7 +290,7 @@ impl ValidateScoped for NestOpts {
 
 /// Options for struct field attributes
 #[derive(Debug, Clone, FromField)]
-#[darling(attributes(shrinkwrap), forward_attrs, allow_unknown_fields)]
+#[darling(attributes(shrinkwrap), forward_attrs(shrinkwrap_attr))]
 pub struct DeriveItemFieldOpts {
     /// only None for tuple fields, therefore safe to unwrap
     pub ident: Option<Ident>,
@@ -301,10 +302,16 @@ pub struct DeriveItemFieldOpts {
 }
 impl ValidateScoped for DeriveItemFieldOpts { }
 
+#[derive(Debug, Clone, FromMeta)]
+pub struct PassthroughAttribute {
+    #[darling(default)]
+    pub nest: PathList,
+    #[darling(multiple)]
+    pub attr: Vec<syn::Meta>,
+}
 
 /// Wrap field `nest_in` attribute options
 #[derive(Debug, Clone, FromMeta)]
-#[darling(allow_unknown_fields)]
 pub struct NestInOpts {
     /// Nest key for which this field should be included/mapped
     #[darling(rename = "id")]

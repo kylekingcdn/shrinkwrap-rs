@@ -1,12 +1,26 @@
-use darling::FromDeriveInput;
+use darling::{FromDeriveInput, FromMeta, ast::NestedMeta};
 use proc_macro::TokenStream;
-use syn::{DeriveInput, parse_macro_input};
+use quote::ToTokens;
+use syn::{DeriveInput, Ident, Path, parse_macro_input};
+use std::error::Error;
 
 use crate::generate::generate_entrypoint;
-use crate::parse::types::{DeriveItemOpts, ValidateScoped};
+use crate::parse::types::{DeriveItemOpts, ValidateScoped, PassthroughAttribute};
 
 // -- TODO: use nproc macro error
 
+#[derive(Debug, Clone)]
+pub struct WrapGenError {
+    pub error_text: String,
+}
+impl std::fmt::Display for WrapGenError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.error_text)
+    }
+}
+impl Error for WrapGenError {
+
+}
 pub(crate) fn derive_wrap_impl(input: TokenStream) -> TokenStream {
     let origin_struct = parse_macro_input!(input as DeriveInput);
 
@@ -17,27 +31,6 @@ pub(crate) fn derive_wrap_impl(input: TokenStream) -> TokenStream {
         }
     };
 
-    let fields = &args.data.clone().take_struct().unwrap().fields;
-    for field in fields {
-        eprintln!("\ndumping field:\n{field:#?}");
-        let field_attrs = &field.attrs;
-        // let attrs_tokenized = quote::quote! { #field_attrs };
-        for attr in field_attrs {
-            let path = attr.path();
-            match darling::util::parse_attribute_to_meta_list(&attr) {
-                Ok(parsed) => {
-                    eprintln!("successfully parsed attribute {path:#?}");
-                    let parsed_fmt = quote::quote! { #parsed};
-                    eprintln!("generated output for attrs: {parsed_fmt}");
-                },
-                Err(err) => {
-                    eprintln!("failed to parse attribute {path:#?} - {err}");
-                },
-            }
-            // let attr_val =    .unwrap();
-            // eprintln!("parsed attr_val: {attr_val:#?}");
-        }
-    }
     if let Some(invalidity) = &args.validate_within_scope() {
         let errors = invalidity.join("\n\n");
         if !errors.is_empty() {

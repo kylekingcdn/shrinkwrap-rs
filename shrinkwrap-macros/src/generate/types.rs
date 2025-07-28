@@ -4,6 +4,7 @@ use darling::ToTokens;
 use darling::util::PathList;
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
+use std::collections::HashMap;
 use syn::{Ident, Path, Type};
 
 use crate::parse::types::{ExtraOpts, NestOpts, WrapperOpts};
@@ -244,6 +245,7 @@ pub struct Nest {
 
     pub field_type: Path,
     pub fields: Vec<NestField>,
+    pub field_attrs: Vec<NestFieldAttrs>,
 
     /// Some if this nest has additional nests in it's heirachy.
     /// The value is the type ident for the extra struct type
@@ -254,6 +256,7 @@ impl Nest {
         opts: NestOpts,
         root_ident: &Ident,
         fields: Vec<NestField>,
+        field_attrs: Vec<NestFieldAttrs>,
         with_extra: Option<ExtraNestField>,
     ) -> Self {
         let struct_name = opts.struct_name(root_ident);
@@ -270,6 +273,7 @@ impl Nest {
             derive,
             origin_ident,
             field_type,
+            field_attrs,
             fields,
             with_extra,
         }
@@ -305,9 +309,22 @@ impl ToTokens for Nest {
             field_doc: field_doc_str,
         } in &self.fields
         {
+            let field_attrs = self.field_attrs.iter().find(|attr| &attr.field_name == name);
+            let nested_attr_tokens = match field_attrs {
+                Some(attrs) => {
+                    let attributes_out = attrs.attributes_token.clone();
+                    quote::quote! {
+                        #[#attributes_out]
+                    }
+                },
+                None => {
+                    quote::quote! {}
+                },
+            };
             let field_doc = build_docs_token(field_doc_str);
             field_tokens.extend(quote! {
                 #field_doc
+                #nested_attr_tokens
                 pub #name: #field_type,
             });
         }
@@ -344,6 +361,19 @@ impl PartialEq for NestField {
     }
 }
 impl Eq for NestField {}
+
+#[derive(Debug, Clone)]
+pub struct NestFieldAttrs {
+    pub field_name: Ident,
+    pub attributes_token: TokenStream
+}
+
+/// Provides a mapping of a nest's defined origin (or root) to nest opts
+pub(crate) type NestOriginMap<'a> = HashMap<Ident, Vec<NestOpts>>;
+/// Provides a mapping of a nest ID to a list of fields that should be mapped to the assoc nest.
+pub(crate) type NestFieldMap<'a> = HashMap<String, Vec<NestField>>;
+/// Provides a mapping of a nest ID to a list of field x attribute pairs
+pub(crate) type NestFieldAttrMap<'a> = HashMap<String, Vec<NestFieldAttrs>>;
 
 // -- quote helpers
 
