@@ -2,7 +2,7 @@ use darling::FromDeriveInput;
 use proc_macro::TokenStream;
 use syn::{DeriveInput, parse_macro_input};
 
-use crate::generate::generate_entrypoint;
+use crate::generate::{generate_entrypoint, expand_tokens};
 use crate::parse::types::{DeriveItemOpts, ValidateScoped};
 
 // -- TODO: use nproc macro error
@@ -24,24 +24,10 @@ pub(crate) fn derive_wrap_impl(input: TokenStream) -> TokenStream {
         }
     }
 
-    #[cfg(feature = "expand")]
     {
         let out = generate_entrypoint(args);
-        let out_file = syn::parse_file(out.to_string().as_str());
-        match out_file {
-            Ok(out_file) => {
-                let out_fmt = prettyplease::unparse(&out_file);
-                eprintln!("{}", &out_fmt);
-            }
-            Err(err) => {
-                eprintln!("failed to render formatted output - err: {err}\n\nunformatted: {out}");
-            }
-        }
+        expand_tokens(&out, "Full shrinkwrap derive");
 
         out.into()
-    }
-    #[cfg(not(feature = "expand"))]
-    {
-        generate_entrypoint(args).into()
     }
 }
