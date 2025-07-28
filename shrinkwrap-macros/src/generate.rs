@@ -172,6 +172,7 @@ pub(crate) fn generate_wrapper_struct(
             root_extra_fields.push(ExtraNestField {
                 field_name: nest.field_name(),
                 type_ident: nest.struct_name(root_ident),
+                optional: nest.optional.is_present(),
             });
         }
     }
@@ -199,6 +200,7 @@ pub(crate) fn generate_extra_structs(
             let field = ExtraNestField {
                 field_name: nest.field_name(),
                 type_ident: nest.struct_name(root_ident),
+                optional: nest.optional.is_present(),
             };
             nest_fields.push(field);
         }

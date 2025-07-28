@@ -263,6 +263,14 @@ pub struct NestOpts {
     /// Sets the struct-level documentation for the generated Nest struct
     #[darling(default = String::new)]
     pub doc: String,
+
+    /// The parent extra struct will type the field for this nest with `Option<T>`, e.g, the generated extra struct would look like
+    /// ```rust
+    /// pub struct MyDataExtra {
+    ///     pub text: Option<MyDataNestedText>,
+    /// }
+    /// ```
+    pub optional: Flag,
 }
 impl NestOpts {
     fn field_name_default(&self) -> Ident {
@@ -325,6 +333,12 @@ impl ValidateScoped for NestOpts {
         if self.id.is_empty() {
             issues.push("Nest `id` cannot be empty".into());
         }
+        // optional nests aren't compatible with from impl's
+        // this is because it's not possible to impl From for Option<T> (orphan rule prevents this)
+        if self.optional.is_present() && matches!(&self.map_strategy, NestMapStrategy::From) {
+            issues.push("Optional nests (configured with `optional attr`) are not incompatible when also configured with `from`.\n\nThis is because it's not possible to impl `From<..>` for `Option<..>` (the orphan rule prevents this). Please use the `transform` option to handle mapping data for optional nests.".into())
+        }
+
         if issues.is_empty() {
             None
         } else {

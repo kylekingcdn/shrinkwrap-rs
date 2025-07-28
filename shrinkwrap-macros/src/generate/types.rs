@@ -164,6 +164,7 @@ impl ToTokens for Wrapper {
 pub struct ExtraNestField {
     pub field_name: Ident,
     pub type_ident: Ident,
+    pub optional: bool,
 }
 #[derive(Debug, Clone)]
 pub struct Extra {
@@ -220,9 +221,15 @@ impl ToTokens for Extra {
             let nest_field_name = &nest.field_name;
             let nest_struct = &nest.type_ident;
 
-            nest_field_tokens.extend(quote! {
-                pub #nest_field_name: #nest_struct,
-            });
+            if nest.optional {
+                nest_field_tokens.extend(quote! {
+                    pub #nest_field_name: Option<#nest_struct>,
+                });
+            } else {
+                nest_field_tokens.extend(quote! {
+                    pub #nest_field_name: #nest_struct,
+                });
+            }
         }
 
         let output = quote! {
