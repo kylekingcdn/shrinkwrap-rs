@@ -80,6 +80,7 @@ impl Wrapper {
             #[automatically_derived]
             impl ::shrinkwrap::wrap::Wrap for #data_struct_name {
                 type Wrapper = #wrapper_struct_name;
+
                 fn to_wrapped(self) -> Self::Wrapper {
                     <Self::Wrapper as From<#data_struct_name>>::from(self)
                 }
@@ -108,6 +109,7 @@ impl Wrapper {
             #[automatically_derived]
             impl ::shrinkwrap::wrap::WrapWith<#transformer_type> for #data_struct_name {
                 type Wrapper = #wrapper_struct_name;
+
                 fn to_wrapped_with(self, transform: &#transformer_type) -> #wrapper_struct_name {
                     #wrapper_struct_name {
                         #extra_field_name: #extra_struct_name {
@@ -322,9 +324,7 @@ impl ToTokens for Nest {
             let nested_attr_tokens = match field_attrs {
                 Some(attrs) => {
                     let attributes_out = attrs.attributes_token.clone();
-                    quote::quote! {
-                        #[#attributes_out]
-                    }
+                    quote::quote! { #[#attributes_out] }
                 }
                 None => {
                     quote::quote! {}
@@ -392,9 +392,7 @@ fn build_docs_token(doc: &str) -> TokenStream {
     if doc.is_empty() {
         TokenStream::new()
     } else {
-        quote! {
-            #[doc=#doc]
-        }
+        quote! { #[doc=#doc] }
     }
 }
 
