@@ -247,6 +247,8 @@ pub struct Nest {
     pub fields: Vec<NestField>,
     pub field_attrs: Vec<NestFieldAttrs>,
 
+    /// false if under root extra
+    pub is_nested: bool,
     /// Some if this nest has additional nests in it's heirachy.
     /// The value is the type ident for the extra struct type
     pub with_extra: Option<ExtraNestField>,
@@ -261,6 +263,7 @@ impl Nest {
     ) -> Self {
         let struct_name = opts.struct_name(root_ident);
         let origin_ident = opts.origin(root_ident).clone();
+        let is_nested = opts.origin.is_some();
         let NestOpts {
             derive,
             doc,
@@ -275,6 +278,7 @@ impl Nest {
             field_type,
             field_attrs,
             fields,
+            is_nested,
             with_extra,
         }
     }
@@ -349,7 +353,9 @@ impl ToTokens for Nest {
         };
 
         tokens.extend(output);
-        tokens.extend(self.to_nest_impl());
+        if !self.is_nested {
+            tokens.extend(self.to_nest_impl());
+        }
     }
 }
 
