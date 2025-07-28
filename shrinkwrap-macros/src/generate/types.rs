@@ -77,6 +77,7 @@ impl Wrapper {
         let data_struct_name = &self.data_struct_name;
 
         quote! {
+            #[automatically_derived]
             impl ::shrinkwrap::wrap::Wrap for #data_struct_name {
                 type Wrapper = #wrapper_struct_name;
                 fn to_wrapped(self) -> Self::Wrapper {
@@ -104,6 +105,7 @@ impl Wrapper {
             })
         }
         quote! {
+            #[automatically_derived]
             impl ::shrinkwrap::wrap::WrapWith<#transformer_type> for #data_struct_name {
                 type Wrapper = #wrapper_struct_name;
                 fn to_wrapped_with(self, transform: &#transformer_type) -> #wrapper_struct_name {
@@ -287,6 +289,7 @@ impl Nest {
         let struct_name = &self.struct_name;
         let origin_ident = &self.origin_ident;
         quote! {
+            #[automatically_derived]
             impl ::shrinkwrap::transform::ToNest<#struct_name> for #origin_ident {
                 fn to_nest(&self) -> #struct_name {
                     <#struct_name as From<&#origin_ident>>::from(self)
@@ -421,6 +424,7 @@ pub(crate) fn build_from_impl(
     tokens: &mut proc_macro2::TokenStream,
 ) {
     tokens.extend(quote! {
+        #[automatically_derived]
         impl ::core::convert::From<#from_type> for #to_type {
             fn from(#from_param_name: #from_type) -> Self {
                 Self {
@@ -439,6 +443,7 @@ pub(crate) fn build_from_impl_with_ref(
     tokens: &mut proc_macro2::TokenStream,
 ) {
     tokens.extend(quote! {
+        #[automatically_derived]
         impl ::core::convert::From<&#from_type> for #to_type {
             fn from(#from_param_name: &#from_type) -> Self {
                 Self {
