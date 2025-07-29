@@ -2,7 +2,7 @@ use darling::FromMeta;
 use proc_macro_error2::abort;
 use quote::{ToTokens, quote};
 use std::collections::{HashMap, HashSet};
-use syn::{spanned::Spanned, Attribute, Ident, Type};
+use syn::{spanned::Spanned, Attribute, Ident, Path};
 
 mod types;
 
@@ -221,7 +221,7 @@ pub(crate) fn generate_wrapper_structs(
     struct_attrs: &Vec<NestScopedAttrs>,
     tokens: &mut proc_macro2::TokenStream,
     from_impl: bool,
-    from_with_impl: Option<Type>,
+    from_with_impl: Option<Path>,
 ) {
     for (origin_ident, nest_opts) in origin_map {
         let mut impl_tokens = quote!();

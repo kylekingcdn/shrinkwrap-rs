@@ -4,8 +4,10 @@ use darling::ast::Data;
 use darling::util::{Flag, Override, PathList};
 use darling::{FromDeriveInput, FromField, FromMeta};
 use heck::AsUpperCamelCase;
-use quote::format_ident;
-use syn::{Attribute, Ident, Path, Type};
+use proc_macro_error2::abort;
+use quote::{format_ident, ToTokens};
+use syn::spanned::Spanned;
+use syn::{Attribute, Ident, Path};
 
 // - validate trait
 
@@ -209,8 +211,8 @@ impl ValidateScoped for ExtraOpts {}
 #[allow(clippy::large_enum_variant)]
 pub enum NestMapStrategy {
     From,
-    Transform { with: Type },
-    Nested { origin: Ident }
+    Transform { with: Path },
+    Nested { origin: Path }
 }
 impl NestMapStrategy {
     pub fn maps_with_from(&self) -> bool {
@@ -219,7 +221,7 @@ impl NestMapStrategy {
     pub fn maps_with_transform(&self) -> bool {
         matches!(self, Self::Transform { .. })
     }
-    pub fn map_transform_type(&self) -> Option<Type> {
+    pub fn map_transform_type(&self) -> Option<Path> {
         match &self {
             NestMapStrategy::Transform { with } => Some(with.clone()),
             NestMapStrategy::From => None,
@@ -259,7 +261,7 @@ pub struct NestOpts {
     ///    ```rust
     ///    impl From<&MyData> for MyDataNestedExample
     ///    ```
-    /// 2: **`transform(with = "TransformTypeGoesHere")`**
+    /// 2: **`transform(with = TransformTypeGoesHere)`**
     ///
     ///    Use a **pre-existing** transform impl of the provided type.
     ///
@@ -275,7 +277,7 @@ pub struct NestOpts {
     ///        }
     ///    }
     ///    ```
-    /// 3: **`nested(origin = "MyDataNestedExample")`**
+    /// 3: **`nested(origin = MyDataNestedExample)`**
     ///
     ///    Nest this under an existing nest, where origin = "NestStructType".
     ///
@@ -334,7 +336,13 @@ impl NestOpts {
     /// It is used to form the base struct name when an origin isn't explicitly provided
     pub fn struct_name_default(&self, root_ident: &Ident) -> Ident {
         let origin_ident = match &self.map_strategy {
-            NestMapStrategy::Nested { origin } => origin,
+            NestMapStrategy::Nested { origin } => {
+                if let Some(last_path_segment) = origin.segments.last() {
+                    &last_path_segment.ident
+                } else {
+                    abort!(origin.span(), format!("Failed to interpret value of `nested(origin = '...')`: `{}`. Please use a type for the origin.", origin.to_token_stream()))
+                }
+            },
             _ => root_ident
         };
         let field_name = self.field_name();
@@ -351,7 +359,13 @@ impl NestOpts {
 
     pub fn origin<'a>(&'a self, root_ident: &'a Ident) -> &'a Ident {
         match &self.map_strategy {
-            NestMapStrategy::Nested { origin } => origin,
+            NestMapStrategy::Nested { origin } => {
+                if let Some(last_path_segment) = origin.segments.last() {
+                    &last_path_segment.ident
+                } else {
+                    abort!(origin.span(), format!("Failed to interpret value of `nested(origin = '...')`: `{}`. Please use a type for the origin.", origin.to_token_stream()))
+                }
+            },
             _ => root_ident,
         }
     }

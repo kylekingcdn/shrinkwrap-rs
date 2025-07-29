@@ -5,7 +5,7 @@ use darling::util::PathList;
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote};
 use std::collections::HashMap;
-use syn::{Ident, Path, Type};
+use syn::{Ident, Path};
 
 use crate::parse::types::{ExtraOpts, NestMapStrategy, NestOpts, PassthroughAttributeContext, WrapperOpts};
 
@@ -89,7 +89,7 @@ impl Wrapper {
     }
     pub fn to_wrapped_with_impl(
         &self,
-        transformer_type: Type,
+        transformer_type: Path,
         root_nests: &Vec<ExtraNestField>,
     ) -> TokenStream {
         let wrapper_struct_name = &self.struct_name;
