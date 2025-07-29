@@ -1,5 +1,6 @@
 use darling::FromDeriveInput;
 use proc_macro::TokenStream;
+use proc_macro_error2::abort;
 use syn::{DeriveInput, parse_macro_input};
 
 use crate::generate::{generate_entrypoint, expand_tokens};
@@ -20,7 +21,7 @@ pub(crate) fn derive_wrap_impl(input: TokenStream) -> TokenStream {
     if let Some(invalidity) = &args.validate_within_scope() {
         let errors = invalidity.join("\n\n");
         if !errors.is_empty() {
-            panic!("{errors}");
+            abort!(args.ident.span(), format!("{errors}"));
         }
     }
     let out = generate_entrypoint(args);

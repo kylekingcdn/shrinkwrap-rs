@@ -110,7 +110,6 @@ pub(crate) fn parse_forward_attrs(
         }
         match PassthroughAttribute::from_meta(&attr.meta) {
             Err(error) => {
-                // panic!("{error:#?}");
                 abort!(error.span(), error)
             },
             Ok(attr_struct) => {
@@ -121,7 +120,7 @@ pub(crate) fn parse_forward_attrs(
                 let mut nest_ids = Vec::new();
                 for nest_id in attr_struct.nest.to_strings() {
                     if nest_ids.contains(&nest_id) {
-                        abort!(attr.span(), "Nest '{nest_id}' specified multiple times (defined in `#[{forward_ident}(...)]`)");
+                        abort!(attr.span(), format!("Nest '{nest_id}' specified multiple times (defined in `#[{forward_ident}(...)]`)"));
                     }
                     nest_ids.push(nest_id.clone());
                 }
@@ -133,16 +132,23 @@ pub(crate) fn parse_forward_attrs(
 
                 // push to scoped attrs vec
                 for attr in attr_struct.attr {
-                    let attr_contents = &attr.require_list().unwrap().tokens;
-                    let attributes_token = attr_contents.to_token_stream();
+                    match &attr.require_list() {
+                        Ok(list) => {
+                            let attr_contents = &list.tokens;
+                            let attributes_token = attr_contents.to_token_stream();
 
-                    let nest_attrs = NestScopedAttrs {
-                        attributes_token,
-                        nests: nest_selection.clone(),
-                        nests_span: Some(attr.span()),
-                        context: attr_struct.context.unwrap_or_default(),
-                    };
-                    all_nest_attrs.push(nest_attrs);
+                            let nest_attrs = NestScopedAttrs {
+                                attributes_token,
+                                nests: nest_selection.clone(),
+                                nests_span: Some(attr.span()),
+                                context: attr_struct.context.unwrap_or_default(),
+                            };
+                            all_nest_attrs.push(nest_attrs);
+                        },
+                        Err(error) => {
+                            abort!(attr.span(), format!("Unexpected attr meta type. Expected a list `(that,looks,like,this).\nOriginal error: {error}`"));
+                        },
+                    }
                 }
             }
         }
@@ -172,7 +178,7 @@ pub(crate) fn validate_forward_attrs<'a>(forward_ident: &Ident, attrs: &Vec<Nest
         if let NestSelection::Restricted(nest_ids) = &attr.nests {
             for nest_id in nest_ids {
                 if !nest_fields.contains_key(nest_id.as_str()) {
-                    abort!(attr.nests_span.unwrap_or(forward_ident.span()), "Nest '{nest_id}' doesn't exist (defined in `#[shrinkwrap_attr(...)]`)");
+                    abort!(attr.nests_span.unwrap_or(forward_ident.span()), format!("Nest '{nest_id}' doesn't exist (defined in `#[shrinkwrap_attr(...)]`)"));
                 }
             }
         }
@@ -363,13 +369,13 @@ pub(crate) fn validate_nests(nest_field_map: &NestFieldMap, all_nest_ids: &Vec<S
     // ensure all nests specified in fields have been defined
     for (nest_id, nest_fields) in nest_field_map {
         if !all_nest_ids.contains(nest_id) {
-            let field_name = nest_fields
+            let field_name_ident = &nest_fields
                 .first()
                 .expect("no field in validate call")
-                .name
-                .to_string();
-            panic!(
-                "Unknown nest '{nest_id}' assigned to field '{field_name}'.\n\nIs the struct missing a `#[shrinkwrap(nest(id = \"{nest_id}\", ..))]` attribute?"
+                .name;
+            let field_name = field_name_ident.to_string();
+            abort!(field_name.span(),
+                format!("Unknown nest '{nest_id}' assigned to field '{field_name}'.\n\nIs the struct missing a `#[shrinkwrap(nest(id = \"{nest_id}\", ..))]` attribute?")
             );
         }
     }
@@ -383,9 +389,7 @@ pub(crate) fn build_origin_map(nests: Vec<NestOpts>, root_ident: &Ident) -> Nest
         if !map.contains_key(nest_origin) {
             map.insert(nest_origin.clone(), Vec::new());
         }
-        map.get_mut(nest_origin)
-            .expect("no field in validate call")
-            .push(nest);
+        map.get_mut(nest_origin).unwrap().push(nest); // just inserted
     }
     map
 }
@@ -410,7 +414,7 @@ pub(crate) fn build_nest_fields_map(origin_fields: &Vec<DeriveItemFieldOpts>) ->
                     .and_modify(|e: &mut Vec<NestField>| {
                         // check if the nest already contains this field
                         if e.contains(&field) {
-                            panic!("Nest '{nest_id_ident}' already contains field: {field_ident}");
+                            abort!(field.name.span(), format!("Nest '{nest_id_ident}' already contains field: {field_ident}"));
                         } else {
                             e.push(field.clone());
                         }
