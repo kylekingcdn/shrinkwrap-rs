@@ -70,8 +70,13 @@ impl ValidateScoped for DeriveItemOpts {
 /// Options for struct wrapper attribute
 #[derive(Debug, Clone, Default, FromMeta)]
 pub struct WrapperOpts {
-    /// set the parent wrapper struct name - defaults to `{DataStructName}Wrapper`
-    rename: Option<Ident>,
+    /// Set the struct name suffix used by all associated wrappers (primary + any nested wrappers).
+    ///
+    /// Defaults to `Wrapper`
+    ///
+    /// E.g. For a data struct named: `MyData`, the default corresponding wrapper struct would be `MyDataWrapper`
+    #[darling(default)]
+    struct_suffix: Option<Ident>,
 
     /// Derives to apply to the wrapper struct
     #[darling(default)]
@@ -91,9 +96,29 @@ pub struct WrapperOpts {
 
     /// Serializes data contents into the wrapper inline via `#[serde(flatten)`.
     ///
-    /// **NOTE:** `#[serde(flatten)]` is applied to the wrapper data field, **and not the wrapper itself**
+    /// **NOTE:** `#[serde(flatten)]` is applied to the wrapper data field, **and not the wrapper itself**.
     ///
     /// `flatten = false` will disable data flattening and retain nesting during serialization.
+    ///
+    /// ### Side effects
+    ///
+    /// Disabling data flattening may cause some unexpected changes to rendered data hierarchy (via `#[shrinkwrap(nest(.., nested(origin = ..)))]`).
+    ///
+    /// The current behaviour for parent nests (nests with subsequent data further nested below them), is to provide an intermediate `Wrapper` between itself and the deeply nested data.
+    ///
+    /// This is done on nests for the the same reason it is done on root data struct - it provides the exact same set of benefits.
+    ///
+    /// As a result, when flattening is disabled, data trees become inconsistent. Where non-leaf nests have an extra 'data' object between it and it's data, whereas leaf nests will not have this.
+    ///
+    /// For APIs, this will inevitably lead to a terrible UX for clients. When resources/data structs are shared among responses, the resulting effect is data remaining the same, yet the surrounding schema 'skeleton' changes per-route. =
+    ///
+    /// ##### This is the opposite of what most would expect.
+    ///
+    /// <div class="warning">
+    /// If the derived structs will be exposed as a response format, API or otherwise, then<br>
+    /// <br>
+    /// <b>Do not disable struct flattening</b>
+    /// </div>
     flatten: Option<Override<bool>>,
 
     /// Field name for extra struct, defaults to data
@@ -105,14 +130,17 @@ pub struct WrapperOpts {
     pub extra_field_doc: String,
 }
 impl WrapperOpts {
-    pub fn struct_name_default(data_ident: &Ident) -> Ident {
-        format_ident!("{data_ident}Wrapper")
+    fn struct_name_suffix_default() -> Ident {
+        format_ident!("Wrapper")
+    }
+    pub fn struct_name_suffix(&self) -> Ident {
+        match &self.struct_suffix {
+            Some(suffix) => suffix.clone(),
+            None => Self::struct_name_suffix_default(),
+        }
     }
     pub fn struct_name(&self, data_ident: &Ident) -> Ident {
-        match &self.rename {
-            Some(name) => name.clone(),
-            None => Self::struct_name_default(data_ident),
-        }
+        format_ident!("{}{}", data_ident, self.struct_name_suffix())
     }
     fn data_field_name_default() -> Ident {
         format_ident!("data")
@@ -171,7 +199,7 @@ impl ExtraOpts {
         }
     }
     pub fn struct_name(&self, parent_data_ident: &Ident) -> Ident {
-        format_ident!("{parent_data_ident}{}", self.struct_name_suffix())
+        format_ident!("{}{}", parent_data_ident, self.struct_name_suffix())
     }
 }
 impl ValidateScoped for ExtraOpts {}
@@ -300,7 +328,7 @@ impl NestOpts {
         };
         let suffix = Self::build_struct_name_suffix(field_name);
 
-        format_ident!("{origin_ident}{region_descriptor}{suffix}")
+        format_ident!("{}{region_descriptor}{}", origin_ident, suffix)
     }
     /// `root_ident` is the ident of the top-level data struct containing derive(Wrap)
     /// It is used to form the base struct name when an origin isn't explicitly provided

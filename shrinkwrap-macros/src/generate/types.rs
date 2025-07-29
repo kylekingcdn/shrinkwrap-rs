@@ -9,8 +9,6 @@ use syn::{Ident, Path, Type};
 
 use crate::parse::types::{ExtraOpts, NestMapStrategy, NestOpts, PassthroughAttributeContext, WrapperOpts};
 
-// -- TODO, add opt structs as child, only define newly required fields
-
 #[derive(Debug, Clone)]
 pub struct Wrapper {
     pub struct_name: Ident,
@@ -129,7 +127,6 @@ impl ToTokens for Wrapper {
         let derives = build_derives_token(&self.derive);
         let doc = build_docs_token(&self.struct_docs);
         let struct_attrs = build_attributes_token(&self.struct_attrs);
-        // expand_debug(&struct_attrs, "Wrapper", "to_tokens");
         let Self {
             struct_name,
             data_field_name,
@@ -161,6 +158,7 @@ impl ToTokens for Wrapper {
                 pub #extra_field_name: #extra_struct_name,
             }
         };
+
         // expand_tokens(&output, "Wrapper::ToTokens");
         tokens.extend(output);
     }
@@ -227,17 +225,15 @@ impl ToTokens for Extra {
 
         for nest in &self.nests {
             let nest_field_name = &nest.field_name;
-            let nest_struct = &nest.type_ident;
-
-            if nest.optional {
-                nest_field_tokens.extend(quote! {
-                    pub #nest_field_name: Option<#nest_struct>,
-                });
-            } else {
-                nest_field_tokens.extend(quote! {
-                    pub #nest_field_name: #nest_struct,
-                });
-            }
+            let nest_struct_ident = &nest.type_ident;
+            // if nest is optional, wrap type w/ Option<T>
+            let nest_struct_tkn = match nest.optional {
+                true => quote!(Option<#nest_struct_ident>),
+                false => quote!(#nest_struct_ident)
+            };
+            nest_field_tokens.extend(quote! {
+                pub #nest_field_name: #nest_struct_tkn,
+            });
         }
 
         let output = quote! {
@@ -249,6 +245,7 @@ impl ToTokens for Extra {
                 #nest_field_tokens
             }
         };
+
         // expand_tokens(&output, "Extra::ToTokens");
         tokens.extend(output);
     }
@@ -267,11 +264,7 @@ pub struct Nest {
     pub fields: Vec<NestField>,
     pub field_attrs: Vec<NestFieldAttrs>,
 
-    /// false if under root extra
-    pub is_nested: bool,
-    // /// Some if this nest has additional nests in it's heirachy.
-    // /// The value is the type ident for the extra struct type
-    // pub with_extra: Option<ExtraNestField>,
+    pub map_strategy: NestMapStrategy,
 }
 impl Nest {
     pub fn new(
@@ -280,15 +273,14 @@ impl Nest {
         struct_attrs: Vec<TokenStream>,
         fields: Vec<NestField>,
         field_attrs: Vec<NestFieldAttrs>,
-        // with_extra: Option<ExtraNestField>,
     ) -> Self {
         let struct_name = opts.struct_name(root_ident);
         let origin_ident = opts.origin(root_ident).clone();
-        let is_nested = matches!(opts.map_strategy, NestMapStrategy::Nested { .. });
         let NestOpts {
             derive,
             doc,
             field_type,
+            map_strategy,
             ..
         } = opts;
         Self {
@@ -300,8 +292,7 @@ impl Nest {
             field_type,
             field_attrs,
             fields,
-            is_nested,
-            // with_extra,
+            map_strategy,
         }
     }
 }
@@ -368,11 +359,21 @@ impl ToTokens for Nest {
                 #field_tokens
             }
         };
+
         // expand_tokens(&output, "Nest::ToTokens");
         tokens.extend(output);
-        if !self.is_nested {
+
+        // conditional trait impls
+        if self.map_strategy == NestMapStrategy::From {
+            // eprintln!("nest '{}' has `From` mapping strategy, adding `to_nest` impls", self.struct_name);
             tokens.extend(self.to_nest_impl());
         }
+        // NestMapStrategy::Transform { .. } => {
+        //     eprintln!("skipping 'Nest impl for '{}' due to 'Transform' mapping strategy", &self.struct_name);
+        // },
+        // NestMapStrategy::Nested { .. } => {
+        //     eprintln!("skipping 'Nest impl for '{}' due to 'Nested' mapping strategy", &self.struct_name);
+        // },
     }
 }
 
