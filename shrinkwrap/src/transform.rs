@@ -38,8 +38,8 @@ pub trait Transform {
 /// For regular (non-optional, without deep nesting), the `impl` should look like:
 ///
 /// ```
-/// impl TransformToNest<MyData> for MyTransform {
-///     type Data = MyDataNestedText;
+/// impl TransformToNest<MyDataNestedText> for MyTransform {
+///     type Data = MyData;
 ///     fn transform_to_nest(&self, data: &MyData, _: &MyTransformOptions) -> MyDataNestedText {
 ///         MyDataNestedText {
 ///             uptime_sec: data.uptime_sec.to_string(),
