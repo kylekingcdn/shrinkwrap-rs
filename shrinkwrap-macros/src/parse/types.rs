@@ -7,8 +7,8 @@ use darling::util::{Flag, Override, PathList, SpannedValue};
 use darling::{FromDeriveInput, FromField, FromMeta};
 use heck::AsUpperCamelCase;
 use proc_macro2::{Span, TokenStream};
-use quote::{format_ident, quote, ToTokens};
-use syn::{Attribute, Ident, LitStr, Meta, Path,};
+use quote::{ToTokens, format_ident, quote};
+use syn::{Attribute, Ident, LitStr, Meta, Path};
 
 use crate::mapping::types::NestRepo;
 
@@ -124,7 +124,12 @@ pub struct State {
     pub root_ident: Ident,
 }
 impl State {
-    pub fn new(global: GlobalOpts, wrapper: WrapperOpts, extra: ExtraOpts, root_ident: Ident) -> Self {
+    pub fn new(
+        global: GlobalOpts,
+        wrapper: WrapperOpts,
+        extra: ExtraOpts,
+        root_ident: Ident,
+    ) -> Self {
         Self {
             nest_repo: NestRepo::new(root_ident.clone()),
 
@@ -148,7 +153,12 @@ impl State {
 
         // add derives defined in global opts
         if !self.global.derive_all.is_empty() {
-            let global_derive_tokens: Vec<TokenStream> = self.global.derive_all.iter().map(|d| d.to_token_stream()).collect();
+            let global_derive_tokens: Vec<TokenStream> = self
+                .global
+                .derive_all
+                .iter()
+                .map(|d| d.to_token_stream())
+                .collect();
             derives.extend(global_derive_tokens);
         }
 
@@ -173,7 +183,6 @@ pub struct DeriveItemFieldOpts {
     pub nests: NestIdSelection,
 }
 impl ValidateScoped for DeriveItemFieldOpts {}
-
 
 /// Options for struct wrapper attribute
 #[derive(Debug, Clone, Default, FromMeta)]
@@ -258,9 +267,7 @@ impl WrapperOpts {
     }
     pub fn flatten(&self) -> bool {
         match self.flatten {
-            Some(Override::Inherit)
-            | Some(Override::Explicit(true))
-            | None => true,
+            Some(Override::Inherit) | Some(Override::Explicit(true)) | None => true,
             Some(Override::Explicit(false)) => false,
         }
     }
@@ -310,7 +317,6 @@ impl ValidateScoped for ExtraOpts {}
 
 /// Options for struct nest attribute
 #[derive(Debug, Clone, FromMeta)]
-/// Options for struct nest attribute
 pub struct DeeplyNestedOpts {
     // #[darling(with=Self::parse_origin)]
     pub origin: Ident,
@@ -498,7 +504,8 @@ impl DerivedStructClass {
             Self::Wrapper => "wrapper",
             Self::Nest => "nest",
             Self::Extra => "extra",
-        }.into()
+        }
+        .into()
     }
 }
 impl TryFrom<&syn::Path> for DerivedStructClass {
@@ -516,7 +523,10 @@ impl TryFrom<&syn::Path> for DerivedStructClass {
                 return Ok(class);
             }
         }
-        Err(darling::Error::custom("Invalid class type specified. Valid types: [wrapper, extra, nest]").with_span(&value))
+        Err(darling::Error::custom(
+            "Invalid class type specified. Valid types: [wrapper, extra, nest]",
+        )
+        .with_span(&value))
     }
 }
 

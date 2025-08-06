@@ -10,7 +10,7 @@ use shrinkwrap::{ToWrappedWith, Transform, TransformToNest, Wrap};
 pub struct MyData {
     // include this field in the text nest
     #[shrinkwrap(nests("text"))]
-    uptime_sec: i64
+    uptime_sec: i64,
 }
 
 // -- transform
@@ -46,7 +46,6 @@ impl TransformToNest<MyDataNestedText> for MyTransform {
     }
 }
 
-
 // -- integration example
 
 pub fn main() -> Result<(), serde_json::Error> {
@@ -57,9 +56,7 @@ pub fn main() -> Result<(), serde_json::Error> {
     let transform_opts = MyTransformOpts {};
 
     // initialize your data
-    let data = MyData {
-        uptime_sec: 10,
-    };
+    let data = MyData { uptime_sec: 10 };
 
     // generate the wrapper with your mapped data nested under 'extra'.
     let wrapped = data.to_wrapped_with(&transform, &transform_opts);

@@ -1,14 +1,18 @@
 use darling::FromMeta;
-use proc_macro2::TokenStream;
 use proc_macro_error2::abort;
+use proc_macro2::TokenStream;
 use quote::ToTokens;
 use std::collections::HashMap;
-use syn::{spanned::Spanned, Attribute, Ident, Meta};
-
-use types::*;
-use crate::mapping::types::{NestField, NestStructAttrInfo};
+use syn::{Attribute, Ident, Meta};
+use syn::spanned::Spanned;
 
 pub mod types;
+
+use crate::mapping::types::{NestField, NestStructAttrInfo};
+use crate::parse::types::{
+    DeriveItemFieldOpts, DerivedStructClass, PassthroughFieldAttribute, PassthroughStructAttribute,
+    State,
+};
 
 pub fn parse_struct_attrs(
     all_nest_ids: &Vec<String>,
@@ -35,12 +39,14 @@ pub fn parse_struct_attrs(
                     // add attribute to all nests
                     None => all_nest_ids.clone(),
                     // use limited set of nests as specified
-                    Some(nest_ids) => nest_ids.iter().map(|id| id.value()).collect()
+                    Some(nest_ids) => nest_ids.iter().map(|id| id.value()).collect(),
                 };
                 let attr_classes = attr_field.limit.class.unwrap_or_default();
 
                 for nest_id in nest_ids {
-                    let attr_info = attr_map.get_mut(&nest_id).unwrap_or_else(|| abort!(&attr, format!("Unknown nest: {nest_id}")));
+                    let attr_info = attr_map
+                        .get_mut(&nest_id)
+                        .unwrap_or_else(|| abort!(&attr, format!("Unknown nest: {nest_id}")));
                     let attr_contents = extract_passthrough_attr_meta_list(&attr_field.attr);
                     if attr_classes.contains(DerivedStructClass::Wrapper) {
                         attr_info.add_wrapper_attr(attr_contents.clone());
@@ -95,10 +101,12 @@ pub fn parse_field_attrs(
                             if !attr_map.contains_key(id_str) {
                                 abort!(id, "Unknown nest ID: {id_str}");
                             }
-                            attr_map.get_mut(id_str).unwrap().push(attr_contents.clone());
+                            attr_map
+                                .get_mut(id_str)
+                                .unwrap()
+                                .push(attr_contents.clone());
                         }
                     }
-                    // nest_ids.iter().map(|id| id.value()).collect(),
                 };
             }
         };
@@ -115,16 +123,19 @@ pub fn map_fields(
 ) {
     for field in origin_fields {
         if let Some(field_ident) = field.ident {
-
             // build nest -> attr map for field
-            let mut nest_attr_map = parse_field_attrs(all_nest_ids, passthrough_attr_ident, &field.attrs);
+            let mut nest_attr_map =
+                parse_field_attrs(all_nest_ids, passthrough_attr_ident, &field.attrs);
             // add field to nest
             for nest_id in field.nests {
                 let nest_id_str = nest_id.value();
                 let attrs = nest_attr_map.remove(&nest_id_str).unwrap_or_else(|| {
                     abort!(&nest_id, format!("Unknown nest: {nest_id_str}"));
                 });
-                let nest_field = NestField { name: field_ident.clone(), attrs };
+                let nest_field = NestField {
+                    name: field_ident.clone(),
+                    attrs,
+                };
                 state.nest_repo.add_field_to_nest(&nest_id, nest_field);
             }
             // NOTE: silently ignore extra nest ids -> unable to determine if no limit from implicit all nests
@@ -140,9 +151,14 @@ pub fn map_fields(
 
 fn extract_passthrough_attr_meta_list(attr_meta: &Meta) -> TokenStream {
     match attr_meta.require_list() {
-        Ok(list) => { list.tokens.to_token_stream() },
+        Ok(list) => list.tokens.to_token_stream(),
         Err(error) => {
-            abort!(attr_meta.span(), format!("Unexpected attr meta type. Expected a list `(that,looks,like,this).\nOriginal error: {error}`"));
-        },
+            abort!(
+                attr_meta.span(),
+                format!(
+                    "Unexpected attr meta type. Expected a list `(that,looks,like,this).\nOriginal error: {error}`"
+                )
+            );
+        }
     }
 }

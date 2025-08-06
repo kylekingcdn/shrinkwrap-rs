@@ -16,7 +16,7 @@ pub enum ItemVis {
 impl ToTokens for ItemVis {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         if matches!(self, Self::Public) {
-            tokens.extend(quote!{pub});
+            tokens.extend(quote! {pub});
         }
     }
 }
@@ -30,7 +30,13 @@ pub struct StructCommon {
     pub doc: Option<String>,
 }
 impl StructCommon {
-    pub fn new(vis: ItemVis, ty: Path, derives: Vec<TokenStream>, attrs: Vec<TokenStream>, doc: Option<String>) -> Self {
+    pub fn new(
+        vis: ItemVis,
+        ty: Path,
+        derives: Vec<TokenStream>,
+        attrs: Vec<TokenStream>,
+        doc: Option<String>,
+    ) -> Self {
         Self {
             vis,
             ty,
@@ -54,14 +60,21 @@ pub struct StructField {
     pub doc: Option<String>,
 }
 impl StructField {
-    pub fn new(vis: ItemVis, name: Ident, ty: Path, optional: bool, attrs: Vec<TokenStream>, doc: Option<String>) -> Self {
+    pub fn new(
+        vis: ItemVis,
+        name: Ident,
+        ty: Path,
+        optional: bool,
+        attrs: Vec<TokenStream>,
+        doc: Option<String>,
+    ) -> Self {
         Self {
             vis,
             name,
             ty,
             optional,
             attrs,
-            doc
+            doc,
         }
     }
     #[allow(dead_code)]
@@ -79,11 +92,13 @@ impl StructField {
 }
 impl ToTokens for StructField {
     fn to_tokens(&self, tokens: &mut TokenStream) {
-        let Self { vis, name, attrs, .. } = &self;
+        let Self {
+            vis, name, attrs, ..
+        } = &self;
         let ty = self.ty_full();
-        let mut attr_tokens = quote!{#( #[#attrs] )*};
+        let mut attr_tokens = quote! {#( #[#attrs] )*};
         if let Some(doc) = &self.doc {
-            attr_tokens.extend(quote!{#[doc = #doc]});
+            attr_tokens.extend(quote! {#[doc = #doc]});
         }
         tokens.extend(quote! {
             #attr_tokens
@@ -107,9 +122,7 @@ pub struct NestedWrapper {
 }
 
 #[derive(Debug, Clone)]
-pub struct RootWrapper {
-
-}
+pub struct RootWrapper {}
 
 #[derive(Debug, Clone)]
 pub enum WrapperType {
@@ -160,16 +173,21 @@ impl From<Nest> for UniversalStruct {
 }
 impl ToTokens for UniversalStruct {
     fn to_tokens(&self, tokens: &mut TokenStream) {
-        let StructCommon { vis, derives, attrs, .. } = &self.common;
+        let StructCommon {
+            vis,
+            derives,
+            attrs,
+            ..
+        } = &self.common;
         let ty = self.common.ty_full();
         let fields = &self.fields;
 
         let mut attr_tokens = build_derives(derives);
-        attr_tokens.extend(quote!{#( #[#attrs] )*});
+        attr_tokens.extend(quote! {#( #[#attrs] )*});
         if let Some(doc) = &self.common.doc {
-            attr_tokens.extend(quote!{#[doc = #doc]});
+            attr_tokens.extend(quote! {#[doc = #doc]});
         }
-        let out = quote!{
+        let out = quote! {
             #[automatically_derived]
             #attr_tokens
             #vis struct #ty {

@@ -1,7 +1,7 @@
-use proc_macro2::{TokenStream};
-use proc_macro_error2::{abort_call_site, OptionExt, ResultExt};
+use proc_macro_error2::{OptionExt, ResultExt, abort_call_site};
+use proc_macro2::TokenStream;
 use quote::{quote, ToTokens};
-use std::{collections::{HashSet, VecDeque}};
+use std::collections::{HashSet, VecDeque};
 use syn::{parse2, Ident, Meta, Path};
 
 use crate::{
@@ -10,12 +10,13 @@ use crate::{
         types::{DeriveItemOpts, State},
     },
     serialize::types::{
-        NestedWrapper, RootWrapper, StructField, UniversalStruct, WrapperType, ItemVis, Wrapper, Extra, Nest, StructCommon
+        Extra, ItemVis, Nest, NestedWrapper, RootWrapper, StructCommon, StructField,
+        UniversalStruct, Wrapper, WrapperType,
     },
-    util::path_parse
+    util::path_parse,
 };
 
-pub fn generate(derive_opts: DeriveItemOpts) -> TokenStream  {
+pub fn generate(derive_opts: DeriveItemOpts) -> TokenStream {
     // destructure input opts
     let DeriveItemOpts {
         ident: root_ident,
@@ -40,7 +41,12 @@ pub fn generate(derive_opts: DeriveItemOpts) -> TokenStream  {
 
     // build map of nest fields
     let origin_fields = data.take_struct().expect("couldnt get root fields").fields;
-    map_fields(&mut state, &all_nest_ids, origin_fields, &passthrough_attr_ident);
+    map_fields(
+        &mut state,
+        &all_nest_ids,
+        origin_fields,
+        &passthrough_attr_ident,
+    );
 
     // map passthrough struct attrs
     {
@@ -80,14 +86,13 @@ fn generate_structs(state: &State) -> TokenStream {
 
         // handle inline mode changes
         if state.global.inline() {
-            if origin_ident != &state.root_ident  {
+            if origin_ident != &state.root_ident {
                 wrapper_attrs.push(schemars_inline_meta.to_token_stream());
-            }
-            else {
+            } else {
                 let origin_str = origin_ident.to_string();
                 wrapper_attrs.push(
                     parse2(quote!(schemars(rename = #origin_str)))
-                    .expect("Unexpected error rendering #[schemars(rename = ...)] attribute")
+                        .expect("Unexpected error rendering #[schemars(rename = ...)] attribute"),
                 );
             }
             extra_attrs.push(schemars_inline_meta.to_token_stream());
@@ -191,33 +196,45 @@ fn generate_structs(state: &State) -> TokenStream {
             ItemVis::Public,
             path_parse(quote!(#extra_ident)),
             extra_derives,
-            extra_attrs.clone().iter().map(|a| a.to_token_stream()).collect(),
+            extra_attrs
+                .clone()
+                .iter()
+                .map(|a| a.to_token_stream())
+                .collect(),
             state.extra_opts.doc.clone(),
         );
         // init full extra struct and output tokens
         let extra = Extra {
             common: extra_common,
-            nest_fields: extra_nest_fields
+            nest_fields: extra_nest_fields,
         };
 
         // build wrapper
         let mut wrapper_data_field_attrs = Vec::new();
         // wrapper derives
         let mut wrapper_derives = state.default_derives();
-        wrapper_derives.extend(state.wrapper_opts.derive.iter().map(|d| d.to_token_stream()));
+        wrapper_derives.extend(
+            state
+                .wrapper_opts
+                .derive
+                .iter()
+                .map(|d| d.to_token_stream()),
+        );
         // add flatten to wrapper data attrs
         if state.wrapper_opts.flatten() {
             wrapper_data_field_attrs.push(quote!(serde(flatten)));
         }
         // handle nested/root wrapper differences
-        let wrapper_subtype  = if origin_ident == &state.root_ident {
-            WrapperType::Root(RootWrapper{})
+        let wrapper_subtype = if origin_ident == &state.root_ident {
+            WrapperType::Root(RootWrapper {})
         } else {
-            let wrapped_nest = state.nest_repo.get_by_ident(origin_ident).expect_or_abort(format!("Failed to resolve wrapped nest by ident: {origin_ident}").as_str());
+            let wrapped_nest = state.nest_repo.get_by_ident(origin_ident).expect_or_abort(
+                format!("Failed to resolve wrapped nest by ident: {origin_ident}").as_str(),
+            );
             let wrapper_optional = state.global.all_optional() || wrapped_nest.opts.optional();
             WrapperType::Nested(NestedWrapper {
                 data_source_ident: origin_ident.clone(),
-                optional: wrapper_optional
+                optional: wrapper_optional,
             })
         };
 
@@ -226,7 +243,11 @@ fn generate_structs(state: &State) -> TokenStream {
             ItemVis::Public,
             path_parse(quote!(#wrapper_ident)),
             wrapper_derives,
-            wrapper_attrs.clone().iter().map(|a| a.to_token_stream()).collect(),
+            wrapper_attrs
+                .clone()
+                .iter()
+                .map(|a| a.to_token_stream())
+                .collect(),
             state.wrapper_opts.doc.clone(),
         );
         // init full wrapper struct and output tokens
@@ -238,7 +259,7 @@ fn generate_structs(state: &State) -> TokenStream {
                 path_parse(quote!(#origin_ident)),
                 false,
                 wrapper_data_field_attrs,
-                state.wrapper_opts.data_field_doc.clone()
+                state.wrapper_opts.data_field_doc.clone(),
             ),
             extra_field: StructField::new(
                 ItemVis::Public,
@@ -246,36 +267,46 @@ fn generate_structs(state: &State) -> TokenStream {
                 path_parse(quote!(#extra_ident)),
                 false,
                 vec![],
-                state.wrapper_opts.extra_field_doc.clone()
+                state.wrapper_opts.extra_field_doc.clone(),
             ),
             wrapper_type: wrapper_subtype,
         };
 
-        let impl_to_wrapped_with_out = generate_to_wrapped_with_impl(origin_ident, wrapper.common.ty_full(), extra.common.ty_full(), &extra.nest_fields);
+        let impl_to_wrapped_with_out = generate_to_wrapped_with_impl(
+            origin_ident,
+            wrapper.common.ty_full(),
+            extra.common.ty_full(),
+            &extra.nest_fields,
+        );
         impl_out.extend(impl_to_wrapped_with_out);
 
         // non-primary wrapper, add `TransformToNest` util impl
         // (allows for auto conversion of NestWrapper -> Nest for user TransformToNest impls)
         if origin_ident != &state.root_ident {
             let origin_path = parse2(quote!(#origin_ident)).unwrap_or_abort();
-            let transform_to_nest_impl_out = generate_deeply_nested_wrapper_transform_to_nest_impl(state, &wrapper, &origin_path);
+            let transform_to_nest_impl_out = generate_deeply_nested_wrapper_transform_to_nest_impl(
+                state,
+                &wrapper,
+                &origin_path,
+            );
             impl_out.extend(transform_to_nest_impl_out);
         }
         UniversalStruct::from(wrapper).to_tokens(&mut out);
         UniversalStruct::from(extra).to_tokens(&mut out);
         out.extend(nest_out);
     }
+    // add impls last to keep output organized when using expand feature
+    out.extend(impl_out);
 
-    if !impl_out.is_empty() {
-        out.extend(quote!{
-            // -- begin shrinkwrap trait impls
-        });
-        out.extend(impl_out);
-    }
     out
 }
 
-fn generate_to_wrapped_with_impl(origin_ident: &Ident, wrapper_type: &Path, extra_type: &Path, extra_fields: &Vec<StructField>) -> TokenStream {
+fn generate_to_wrapped_with_impl(
+    origin_ident: &Ident,
+    wrapper_type: &Path,
+    extra_type: &Path,
+    extra_fields: &Vec<StructField>,
+) -> TokenStream {
     // add transform as base predicate
     let mut where_predicate_tokens = quote!(T: shrinkwrap::Transform,);
     let mut extra_field_tokens = quote!();
@@ -286,10 +317,10 @@ fn generate_to_wrapped_with_impl(origin_ident: &Ident, wrapper_type: &Path, extr
     for extra_field in extra_fields {
         let nest_field_name = &extra_field.name;
         let nest_full_type = extra_field.ty_full();
-        where_predicate_tokens.extend(quote!{
+        where_predicate_tokens.extend(quote! {
             T: shrinkwrap::TransformToNest<#nest_full_type, Data = #origin_ident>,
         });
-        extra_field_tokens.extend(quote!{
+        extra_field_tokens.extend(quote! {
             #nest_field_name: transform.transform_to_nest(&self, options),
         });
     }
@@ -315,16 +346,27 @@ fn generate_to_wrapped_with_impl(origin_ident: &Ident, wrapper_type: &Path, extr
     }
 }
 
-fn generate_deeply_nested_wrapper_transform_to_nest_impl(state: &State, wrapper: &Wrapper, nest_full_type: &Path) -> TokenStream {
+fn generate_deeply_nested_wrapper_transform_to_nest_impl(
+    state: &State,
+    wrapper: &Wrapper,
+    nest_full_type: &Path,
+) -> TokenStream {
     if let WrapperType::Nested(nested_wrapper) = &wrapper.wrapper_type {
         let wrapper_type = wrapper.common.ty_full();
-        let origin_ident = &state.nest_repo
+        let origin_ident = &state
+            .nest_repo
             .get_parent_ident(&nested_wrapper.data_source_ident)
-            .expect_or_abort(format!("Internal derive error - failed to map nest origin for {}", &nested_wrapper.data_source_ident).as_str());
+            .expect_or_abort(
+                format!(
+                    "Internal derive error - failed to map nest origin for {}",
+                    &nested_wrapper.data_source_ident
+                )
+                .as_str(),
+            );
         let transform_type = &state.global.transform;
 
         if nested_wrapper.optional {
-            quote::quote!{
+            quote::quote! {
                 #[automatically_derived]
                 impl shrinkwrap::TransformToNest<Option<#wrapper_type>> for #transform_type {
                     type Data = #origin_ident;
@@ -337,7 +379,7 @@ fn generate_deeply_nested_wrapper_transform_to_nest_impl(state: &State, wrapper:
                 }
             }
         } else {
-            quote::quote!{
+            quote::quote! {
                 #[automatically_derived]
                 impl shrinkwrap::TransformToNest<#wrapper_type> for #transform_type {
                     type Data = #origin_ident;
@@ -351,6 +393,8 @@ fn generate_deeply_nested_wrapper_transform_to_nest_impl(state: &State, wrapper:
             }
         }
     } else {
-        abort_call_site!("Internal derive error - nested wrapper generation called on unlayered nest");
+        abort_call_site!(
+            "Internal derive error - nested wrapper generation called on unlayered nest"
+        );
     }
 }

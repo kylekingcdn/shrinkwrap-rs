@@ -4,8 +4,8 @@ mod generate;
 mod mapping;
 mod parse;
 mod serialize;
-mod wrap;
 mod util;
+mod wrap;
 
 use wrap::derive_wrap_impl;
 

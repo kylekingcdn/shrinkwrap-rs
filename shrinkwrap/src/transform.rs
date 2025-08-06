@@ -1,8 +1,6 @@
 use serde::Serialize;
 use std::fmt::Debug;
 
-// TODO: move all non-primary generics into assoc. types
-
 /// Marker trait for a transform impl
 ///
 /// Additionally provides the type for the options parameter used in [`TransformToNest`] and [`ToNestWith`]
@@ -123,12 +121,12 @@ where
     T: TransformToNest<N, Data = Self>,
 {
     fn to_nest_with(&self, transform: &T, options: &T::Options) -> N;
-
 }
-/// Blanket implementation providing `to_nest_with(transform)` for data structs that have a corresponding transform impl (`impl TransformToNest<Nest> for MyTransform`)
+
+/// Blanket implementation providing `to_nest_with(transform)` for data structs that have a corresponding [`TransformToNest<Nest>`] impl.
 impl<D, N, T> ToNestWith<N, T> for D
 where
-    T: TransformToNest<N, Data = D>
+    T: TransformToNest<N, Data = D>,
 {
     fn to_nest_with(&self, transform: &T, options: &T::Options) -> N {
         transform.transform_to_nest(self, options)
@@ -140,7 +138,7 @@ where
 /// Furthermore, any nests which are deeply nested require a [`TransformToNest`] converting from their respective data source (the parent nest).
 pub trait ToWrappedWith<T>: Debug + Clone + Serialize
 where
-    T: Transform
+    T: Transform,
 {
     type Wrapper;
 
@@ -153,11 +151,11 @@ where
 pub trait WrapDataWith<D, T>
 where
     T: Transform,
-    D: ToWrappedWith<T>
+    D: ToWrappedWith<T>,
 {
     fn wrap_data_with(data: D, transform: &T, options: &T::Options) -> Self;
 }
-impl <D,T> WrapDataWith<D,T> for <D as ToWrappedWith<T>>::Wrapper
+impl<D, T> WrapDataWith<D, T> for <D as ToWrappedWith<T>>::Wrapper
 where
     T: Transform,
     D: ToWrappedWith<T>,
