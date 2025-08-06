@@ -7,7 +7,7 @@ use darling::util::{Flag, Override, PathList, SpannedValue};
 use darling::{FromDeriveInput, FromField, FromMeta};
 use heck::AsUpperCamelCase;
 use proc_macro2::{Span, TokenStream};
-use quote::{format_ident, quote};
+use quote::{format_ident, quote, ToTokens};
 use syn::{Attribute, Ident, LitStr, Meta, Path,};
 
 use crate::mapping::types::NestRepo;
@@ -87,7 +87,21 @@ pub struct GlobalOpts {
 
     /// Equivalent to setting `optional` on all nests.
     all_optional: Flag,
+
+    /// List of derives to apply to every generated struct: e.g. each wrapper, extra, nest.
+    ///
+    /// **Note**: Derive lists are merged. You are free to use both `derive_all` as well as `derive` on specific struct types (wrapper, extra, nest).
+    ///
+    /// However, you will still receive an error if the same derive is included multiple times. This applies to merged derive lists.
+    ///
+    /// Regardless of user settings, every generated struct will always derive the following (and therefore should not be manually included in either a shrinkwrap `derive` attr, or the `derive_all` attr)
+    /// - [`Debug`](core::fmt::Debug)
+    /// - [`Clone`](core::clone::Clone)
+    /// - [`serde::Serialize`](serde::Serialize)
+    #[darling(default)]
+    pub derive_all: PathList,
 }
+#[allow(dead_code)]
 impl GlobalOpts {
     pub fn schema(&self) -> bool {
         self.schema.is_present()
@@ -131,6 +145,12 @@ impl State {
     }
     pub fn default_derives(&self) -> Vec<TokenStream> {
         let mut derives = Self::base_derives();
+
+        // add derives defined in global opts
+        if !self.global.derive_all.is_empty() {
+            let global_derive_tokens: Vec<TokenStream> = self.global.derive_all.iter().map(|d| d.to_token_stream()).collect();
+            derives.extend(global_derive_tokens);
+        }
 
         // derive `JsonSchema` if either schema or inline attribute flags are set
         if self.global.schema.is_present() || self.global.inline.is_present() {
@@ -188,7 +208,7 @@ pub struct WrapperOpts {
     ///
     /// ### Side effects
     ///
-    /// Disabling data flattening may cause some unexpected changes to rendered data hierarchy (via `#[shrinkwrap(nest(.., nested(origin = ..)))]`).
+    /// Disabling data flattening may cause some unexpected changes in the rendered data hierarchy (via `#[shrinkwrap(nest(.., nested(origin = ..)))]`).
     ///
     /// The current behaviour for parent nests (nests with subsequent data further nested below them), is to provide an intermediate `Wrapper` between itself and the deeply nested data.
     ///
@@ -196,7 +216,7 @@ pub struct WrapperOpts {
     ///
     /// As a result, when flattening is disabled, data trees become inconsistent. Where non-leaf nests have an extra 'data' object between it and it's data, whereas leaf nests will not have this.
     ///
-    /// For APIs, this will inevitably lead to a terrible UX for clients. When resources/data structs are shared among responses, the resulting effect is data remaining the same, yet the surrounding schema 'skeleton' changes per-route. =
+    /// For APIs, this will inevitably lead to a terrible UX for clients. When resources/data structs are shared among responses, the resulting effect is data remaining the same, yet the surrounding schema 'skeleton' changes per-route.
     ///
     /// ##### This is the opposite of what most would expect.
     ///
