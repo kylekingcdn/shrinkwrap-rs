@@ -3,10 +3,9 @@ use proc_macro::TokenStream;
 use proc_macro_error2::abort;
 use syn::{DeriveInput, parse_macro_input};
 
-use crate::generate::{generate_entrypoint, expand_tokens};
+use crate::generate::generate;
 use crate::parse::types::{DeriveItemOpts, ValidateScoped};
-
-// -- TODO: use nproc macro error
+use crate::util::expand_tokens;
 
 pub(crate) fn derive_wrap_impl(input: TokenStream) -> TokenStream {
     let origin_struct = parse_macro_input!(input as DeriveInput);
@@ -24,7 +23,7 @@ pub(crate) fn derive_wrap_impl(input: TokenStream) -> TokenStream {
             abort!(args.ident.span(), format!("{errors}"));
         }
     }
-    let out = generate_entrypoint(args);
+    let out = generate(args);
     expand_tokens(&out, "Full shrinkwrap derive");
 
     out.into()

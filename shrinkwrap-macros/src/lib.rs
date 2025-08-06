@@ -1,8 +1,11 @@
 use proc_macro_error2::proc_macro_error;
 
 mod generate;
+mod mapping;
 mod parse;
+mod serialize;
 mod wrap;
+mod util;
 
 use wrap::derive_wrap_impl;
 

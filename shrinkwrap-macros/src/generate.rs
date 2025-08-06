@@ -1,513 +1,356 @@
-use darling::FromMeta;
-use proc_macro_error2::abort;
-use quote::{ToTokens, quote};
-use std::collections::{HashMap, HashSet};
-use syn::{spanned::Spanned, Attribute, Ident, Path};
+use proc_macro2::{TokenStream};
+use proc_macro_error2::{abort_call_site, OptionExt, ResultExt};
+use quote::{quote, ToTokens};
+use std::{collections::{HashSet, VecDeque}};
+use syn::{parse2, Ident, Meta, Path};
 
-mod types;
-
-use crate::parse::types::{
-    DeriveItemFieldOpts, DeriveItemOpts, ExtraOpts, NestMapStrategy, NestOpts,
-    PassthroughAttribute, WrapperOpts,
+use crate::{
+    parse::{
+        map_fields, parse_struct_attrs,
+        types::{DeriveItemOpts, State},
+    },
+    serialize::types::{
+        NestedWrapper, RootWrapper, StructField, UniversalStruct, WrapperType, ItemVis, Wrapper, Extra, Nest, StructCommon
+    },
+    util::path_parse
 };
-use types::*;
 
-pub(crate) fn generate_entrypoint(root: DeriveItemOpts) -> proc_macro2::TokenStream {
-    let origin_fields = root
-        .data
-        .take_struct()
-        .expect("couldnt get root fields")
-        .fields;
-    let nest_ids = &root.nest_opts.iter().map(|n| n.id.clone()).collect();
-    let nest_fields = build_nest_fields_map(&origin_fields);
-
-    validate_nests(&nest_fields, nest_ids);
-
-    // destructure primary opts
+pub fn generate(derive_opts: DeriveItemOpts) -> TokenStream  {
+    // destructure input opts
     let DeriveItemOpts {
+        ident: root_ident,
+        data,
+        attrs,
+        global_opts,
         wrapper_opts,
         extra_opts,
         nest_opts,
-        ident: root_ident,
-        attrs,
-        ..
-    } = root;
+    } = derive_opts;
 
-    // parse struct and field attrs
     let passthrough_attr_ident = Ident::new("shrinkwrap_attr", root_ident.span());
-    let struct_attrs = parse_forward_attrs(&passthrough_attr_ident, &attrs, true);
-    validate_forward_attrs(&passthrough_attr_ident, &struct_attrs, &nest_fields);
-    let field_attrs = parse_field_attrs(&passthrough_attr_ident, &origin_fields, &nest_fields);
 
-    let nest_origin_map = build_origin_map(nest_opts, &root_ident);
-    let root_nests: Vec<&NestOpts> = nest_origin_map
-        .get(&root_ident)
-        .map(|nests| nests.iter().collect())
-        .unwrap_or_default();
+    // init state
+    let mut state = State::new(global_opts, wrapper_opts, extra_opts, root_ident.clone());
 
-    // check if all root nests have a From<origin> impl (or more accurately, have the `from` attribute indicator)
-    let all_from_impl = root_nests
-        .iter()
-        .all(|root_nest| root_nest.map_strategy.maps_with_from());
-    // check if all use same transform
-    let first_transform = root_nests
-        .iter()
-        .find(|nest| nest.map_strategy.maps_with_transform())
-        .and_then(|n| n.map_strategy.map_transform_type());
-    let first_strategy = first_transform.clone().map(|with|  NestMapStrategy::Transform { with });
-    let all_identical_transform = match first_strategy {
-        Some(strategy) => root_nests.iter().all(|nest| nest.map_strategy == strategy),
-        None => false,
-    };
-    let transform_all_with = match all_identical_transform {
-        true => first_transform,
-        false => None,
-    };
-
-    let mut output = quote!();
-    generate_extra_structs(
-        &extra_opts,
-        &wrapper_opts,
-        &root_ident,
-        &nest_origin_map,
-        &struct_attrs,
-        &mut output,
-        all_from_impl,
-    );
-    generate_wrapper_structs(
-        wrapper_opts,
-        &extra_opts,
-        &root_ident,
-        &nest_origin_map,
-        &struct_attrs,
-        &mut output,
-        all_from_impl,
-        transform_all_with,
-    );
-    generate_nest_structs(
-        &root_ident,
-        nest_origin_map,
-        &struct_attrs,
-        nest_fields,
-        field_attrs,
-        &mut output,
-    );
-    output
-}
-
-/// Parses nest id/attribute pairings to be copied into the derived structs
-pub(crate) fn parse_forward_attrs(
-    forward_ident: &Ident,
-    attrs: &Vec<Attribute>,
-    allow_context: bool,
-) -> Vec<NestScopedAttrs> {
-    let mut all_nest_attrs = Vec::new();
-
-    for attr in attrs {
-        // only handle attributes that are nested under the specified forward ident (e.g. shrinkwrap_attr)
-        if attr.path().get_ident() != Some(forward_ident) {
-            continue;
-        }
-        match PassthroughAttribute::from_meta(&attr.meta) {
-            Err(error) => {
-                abort!(error.span(), error)
-            },
-            Ok(attr_struct) => {
-                if attr_struct.context.is_some() && !allow_context {
-                    abort!(attr.span(), "Attribute option `context` is not permitted on field attributes. `context` may only be used on struct attributes.");
-                }
-                // resolve list of nest IDs
-                let mut nest_ids = Vec::new();
-                for nest_id in attr_struct.nest.to_strings() {
-                    if nest_ids.contains(&nest_id) {
-                        abort!(attr.span(), format!("Nest '{nest_id}' specified multiple times (defined in `#[{forward_ident}(...)]`)"));
-                    }
-                    nest_ids.push(nest_id.clone());
-                }
-                let nest_selection = if nest_ids.is_empty() {
-                    NestSelection::Unrestricted
-                } else {
-                    NestSelection::Restricted(nest_ids)
-                };
-
-                // push to scoped attrs vec
-                for attr in attr_struct.attr {
-                    match &attr.require_list() {
-                        Ok(list) => {
-                            let attr_contents = &list.tokens;
-                            let attributes_token = attr_contents.to_token_stream();
-
-                            let nest_attrs = NestScopedAttrs {
-                                attributes_token,
-                                nests: nest_selection.clone(),
-                                nests_span: Some(attr.span()),
-                                context: attr_struct.context.unwrap_or_default(),
-                            };
-                            all_nest_attrs.push(nest_attrs);
-                        },
-                        Err(error) => {
-                            abort!(attr.span(), format!("Unexpected attr meta type. Expected a list `(that,looks,like,this).\nOriginal error: {error}`"));
-                        },
-                    }
-                }
-            }
-        }
-    }
-
-    all_nest_attrs
-}
-
-pub(crate) fn parse_field_attrs<'a>(
-    forward_ident: &Ident,
-    fields: &'a Vec<DeriveItemFieldOpts>,
-    nest_fields: &'a NestFieldMap<'a>,
-) -> NestFieldAttrMap<'a> {
-    let mut field_attr_map = HashMap::new();
-
-    for field in fields {
-        let field_ident = field.ident.clone().unwrap();
-        let parsed_attrs = parse_forward_attrs(forward_ident, &field.attrs, false);
-        validate_forward_attrs(forward_ident, &parsed_attrs, nest_fields);
-        field_attr_map.insert(field_ident, parsed_attrs);
-    }
-    build_nest_field_attr_map(field_attr_map, nest_fields)
-}
-
-pub(crate) fn validate_forward_attrs<'a>(forward_ident: &Ident, attrs: &Vec<NestScopedAttrs>, nest_fields: &'a NestFieldMap<'a>) {
-    for attr in attrs {
-        if let NestSelection::Restricted(nest_ids) = &attr.nests {
-            for nest_id in nest_ids {
-                if !nest_fields.contains_key(nest_id.as_str()) {
-                    abort!(attr.nests_span.unwrap_or(forward_ident.span()), format!("Nest '{nest_id}' doesn't exist (defined in `#[shrinkwrap_attr(...)]`)"));
-                }
-            }
-        }
-    }
-}
-
-/// creates a nest-keyed attr map from a field-keyed map
-pub(crate) fn build_nest_field_attr_map<'a>(field_attr_map: HashMap<Ident, Vec<NestScopedAttrs>>, nest_fields: &'a NestFieldMap<'a>) -> NestFieldAttrMap<'a> {
-    let mut nest_map = HashMap::new();
-
-    let all_nest_ids: Vec<String> = nest_fields.keys().cloned().collect();
-    for (field, attrs) in field_attr_map {
-        for attr in attrs {
-            let attr_nest_ids = match attr.nests {
-                NestSelection::Unrestricted => all_nest_ids.clone(),
-                NestSelection::Restricted(nest_ids) => nest_ids,
-            };
-            for nest_id in attr_nest_ids {
-                if !nest_map.contains_key(&nest_id) {
-                    nest_map.insert(nest_id.clone(), Vec::new());
-                }
-                nest_map.entry(nest_id).and_modify(|attr_list| attr_list.push(NestFieldAttrs{
-                    field_name: field.clone(),
-                    attributes_token: attr.attributes_token.clone()
-                }));
-            }
-        }
-    }
-
-    nest_map
-}
-
-// FIXME: arg count - add wrapper structs (oh boy more wrapping)
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn generate_wrapper_structs(
-    opts: WrapperOpts,
-    extra_opts: &ExtraOpts,
-    root_ident: &Ident,
-    origin_map: &NestOriginMap,
-    struct_attrs: &Vec<NestScopedAttrs>,
-    tokens: &mut proc_macro2::TokenStream,
-    from_impl: bool,
-    from_with_impl: Option<Path>,
-) {
-    for (origin_ident, nest_opts) in origin_map {
-        let mut impl_tokens = quote!();
-
-        let mut wrapper_attrs = Vec::new();
-        let root_extra_fields = build_extra_struct_nest_fields(nest_opts, &opts, root_ident, origin_map);
-
-        // add any relevant struct-level attributes - count is likely very low, won't optimize
-        let assoc_nest_ids: Vec<&String> = origin_map.get(origin_ident).map(|nests| {
-            nests.iter().map(|n| &n.id).collect()
-        }).unwrap_or_default();
-        for struct_attr in struct_attrs {
-            if struct_attr.is_permitted_by_filter(StructGenScope::Wrapper, &assoc_nest_ids) {
-                wrapper_attrs.push(struct_attr.attributes_token.clone());
-            }
-        }
-
-        let extra_ident = extra_opts.struct_name(origin_ident);
-        let wrapper = Wrapper::new(opts.clone(), origin_ident, &extra_ident, wrapper_attrs);
-        expand_debug(&wrapper, "Wrapper", "generate_wrapper_structs");
-
-        if root_ident == origin_ident {
-            if from_impl {
-                impl_tokens.extend(wrapper.to_wrapped_impl());
-                impl_tokens.extend(wrapper.build_from_data_impl());
-            } else if let Some(transform) = &from_with_impl {
-                impl_tokens.extend(wrapper.to_wrapped_with_impl(transform.clone(), &root_extra_fields));
-            }
-        }
-        wrapper.to_tokens(tokens);
-        tokens.extend(impl_tokens);
-    }
-}
-
-pub(crate) fn generate_extra_structs(
-    opts: &ExtraOpts,
-    wrapper_opts: &WrapperOpts,
-    root_ident: &Ident,
-    origin_map: &NestOriginMap,
-    struct_attrs: &Vec<NestScopedAttrs>,
-    tokens: &mut proc_macro2::TokenStream,
-    from_impl: bool,
-) {
-    for (origin_ident, nest_opts) in origin_map {
-        let mut extra_attrs = Vec::new();
-        // build a list of all nests which are a direct descendant for generating the struct definition
-        let nest_fields = build_extra_struct_nest_fields(nest_opts, wrapper_opts, root_ident, origin_map);
-
-        // add any relevant struct-level attributes - count is likely very low, won't optimize
-        let assoc_nest_ids: Vec<&String> = origin_map.get(origin_ident).map(|nests| {
-            nests.iter().map(|n| &n.id).collect()
-        }).unwrap_or_default();
-        for struct_attr in struct_attrs {
-            if struct_attr.is_permitted_by_filter(StructGenScope::Extra, &assoc_nest_ids) {
-                extra_attrs.push(struct_attr.attributes_token.clone());
-            }
-        }
-
-        let mut impl_tokens = quote!();
-        let extra = Extra::new(opts, origin_ident, extra_attrs, nest_fields);
-        expand_debug(&extra, "Extra", "generate_extra_structs");
-
-        if from_impl && origin_ident == root_ident {
-            impl_tokens.extend(extra.build_from_data_impl(origin_ident))
-        }
-        extra.to_tokens(tokens);
-        tokens.extend(impl_tokens);
-    }
-}
-
-pub(crate) fn generate_nest_structs(
-    root_ident: &Ident,
-    origin_map: NestOriginMap,
-    struct_attrs: &Vec<NestScopedAttrs>,
-    nest_fields: NestFieldMap,
-    nest_field_attrs: NestFieldAttrMap,
-    tokens: &mut proc_macro2::TokenStream,
-) {
-    origin_map.into_iter().for_each(|(_, origin_nests)| {
-        for nest in origin_nests {
-            let mut nest_attrs = Vec::new();
-            let fields = nest_fields
-                .get(&nest.id)
-                .cloned()
-                .unwrap_or(Vec::<NestField>::new());
-            let field_attrs = nest_field_attrs.get(&nest.id).cloned().unwrap_or_default();
-
-            // add any relevant struct-level attributes - count is likely very low, won't optimize
-            for struct_attr in struct_attrs {
-                if struct_attr.has_struct_scope_for_nest(StructGenScope::Nest, &nest.id) {
-                    nest_attrs.push(struct_attr.attributes_token.clone());
-                }
-            }
-
-            let gen_nest = Nest::new(nest, root_ident, nest_attrs, fields, field_attrs);
-            expand_debug(&gen_nest, "Nest", "generate_nest_structs");
-            gen_nest.to_tokens(tokens);
-
-        }
-    });
-}
-
-// -- utils
-
-pub(crate) fn build_extra_struct_nest_fields(
-    nest_opts: &Vec<NestOpts>,
-    wrapper_opts: &WrapperOpts,
-    root_ident: &Ident,
-    origin_map: &NestOriginMap,
-) -> Vec<ExtraNestField> {
-    let mut fields = Vec::new();
+    // build nest repo
     for nest in nest_opts {
-        let nest_name = nest.struct_name(root_ident);
-
-        let field = ExtraNestField {
-            field_name: nest.field_name(),
-            // if child is leaf, use direct type, otherwiuse a wrapper is required for further nesting
-            type_ident: match origin_ident_is_parent(&nest_name, origin_map) {
-                false => nest_name,
-                true => wrapper_opts.struct_name(&nest_name),
-            } ,
-            optional: nest.optional.is_present(),
-        };
-        fields.push(field);
+        state.nest_repo.insert(nest);
     }
+    let all_nest_ids = state.nest_repo.get_all_ids();
 
-    fields
-}
-// FIXME: error handling
-pub(crate) fn validate_nests(nest_field_map: &NestFieldMap, all_nest_ids: &Vec<String>) {
-    let mut issues = Vec::new();
+    // build map of nest fields
+    let origin_fields = data.take_struct().expect("couldnt get root fields").fields;
+    map_fields(&mut state, &all_nest_ids, origin_fields, &passthrough_attr_ident);
+
+    // map passthrough struct attrs
     {
-        let mut visited_ids = HashSet::new();
-        let mut duplicate_ids = HashSet::new();
-        for id in all_nest_ids {
-            if !visited_ids.insert(id) {
-                duplicate_ids.insert(id);
-            }
-        }
-        for dupe_id in duplicate_ids {
-            issues.push(format!("Multiple nests are using the same ID: `{dupe_id}`"));
+        let nest_struct_attrs = parse_struct_attrs(&all_nest_ids, &passthrough_attr_ident, &attrs);
+        for (nest_id, struct_attrs) in nest_struct_attrs {
+            // nest ids already checked in parse fn
+            let nest_info = state.nest_repo.get_by_id_mut(nest_id.as_str()).unwrap();
+            nest_info.struct_attrs = struct_attrs;
         }
     }
 
-    // ensure all nests specified in fields have been defined
-    for (nest_id, nest_fields) in nest_field_map {
-        if !all_nest_ids.contains(nest_id) {
-            let field_name_ident = &nest_fields
-                .first()
-                .expect("no field in validate call")
-                .name;
-            let field_name = field_name_ident.to_string();
-            abort!(field_name.span(),
-                format!("Unknown nest '{nest_id}' assigned to field '{field_name}'.\n\nIs the struct missing a `#[shrinkwrap(nest(id = \"{nest_id}\", ..))]` attribute?")
+    generate_structs(&state)
+}
+
+fn generate_structs(state: &State) -> TokenStream {
+    let mut out = quote!();
+    let mut impl_out = quote!();
+
+    // generate in top-down, FIFO order
+    let mut gen_queue = VecDeque::new();
+    gen_queue.push_back(&state.root_ident);
+
+    let schemars_inline_meta: Meta = parse2(quote!(schemars(inline))).unwrap();
+
+    while let Some(origin_ident) = gen_queue.pop_front() {
+        let mut nest_out = quote!();
+
+        let extra_ident = state.extra_opts.struct_name(origin_ident);
+        let wrapper_ident = state.wrapper_opts.struct_name(origin_ident);
+
+        // add temporary storage for wrapper and extra attrs from associated nests
+        let mut wrapper_attrs = Vec::new();
+        let mut wrapper_attrs_seen = HashSet::new();
+        let mut extra_attrs = Vec::new();
+        let mut extra_attrs_seen = HashSet::new();
+        let mut extra_nest_fields = Vec::new();
+
+        // handle inline mode changes
+        if state.global.inline() {
+            if origin_ident != &state.root_ident  {
+                wrapper_attrs.push(schemars_inline_meta.to_token_stream());
+            }
+            else {
+                let origin_str = origin_ident.to_string();
+                wrapper_attrs.push(
+                    parse2(quote!(schemars(rename = #origin_str)))
+                    .expect("Unexpected error rendering #[schemars(rename = ...)] attribute")
+                );
+            }
+            extra_attrs.push(schemars_inline_meta.to_token_stream());
+        }
+
+        // build nests
+        let origin_nests = state.nest_repo.get_children_by_origin_ident(origin_ident);
+        for nest in origin_nests {
+            let nest_ident = &nest.ident;
+
+            // add wrapper passthrough attrs
+            for wrapper_attr in nest.struct_attrs.wrapper() {
+                let wrapper_attr_str = wrapper_attr.to_string();
+                if !wrapper_attrs_seen.contains(&wrapper_attr_str) {
+                    wrapper_attrs.push(wrapper_attr.clone());
+                    wrapper_attrs_seen.insert(wrapper_attr_str);
+                }
+            }
+            // add extra passthrough attrs
+            for extra_attr in nest.struct_attrs.extra() {
+                let extra_attr_str = extra_attr.to_string();
+                if !extra_attrs_seen.contains(&extra_attr_str) {
+                    extra_attrs.push(extra_attr.clone());
+                    extra_attrs_seen.insert(extra_attr_str);
+                }
+            }
+            // handle nest field in parent extra struct
+            let nest_extra_base_type = match state.nest_repo.is_parent_ident(nest_ident) {
+                true => state.wrapper_opts.struct_name(nest_ident),
+                false => nest_ident.clone(),
+            };
+            // add new field to extra struct for this nest
+            extra_nest_fields.push(StructField::new(
+                ItemVis::Public,
+                nest.opts.field_name(),
+                path_parse(nest_extra_base_type.to_token_stream()),
+                state.global.all_optional() || nest.opts.optional(),
+                vec![],
+                nest.opts.parent_field_doc.clone(),
+            ));
+
+            // init nest derives
+            let mut nest_derives = state.default_derives();
+            nest_derives.extend(nest.opts.derive.iter().map(|d| d.to_token_stream()));
+
+            // init nest attrs, add automatically added attrs first, matching behaviour or wrapper/extra
+            let mut nest_attrs: Vec<TokenStream> = Vec::new();
+            let mut nest_attrs_seen = HashSet::new();
+            if state.global.inline() {
+                nest_attrs.push(quote!(schemars(inline)));
+            }
+
+            // add nest passthrough attrs
+            for nest_attr in nest.struct_attrs.nest() {
+                let nest_attr_str = nest_attr.to_string();
+                if !nest_attrs_seen.contains(&nest_attr_str) {
+                    nest_attrs.push(nest_attr.clone());
+                    nest_attrs_seen.insert(nest_attr_str);
+                }
+            }
+
+            // init nest common struct info
+            let nest_common = StructCommon::new(
+                ItemVis::Public,
+                path_parse(quote!(#nest_ident)),
+                nest_derives,
+                nest_attrs,
+                nest.opts.struct_doc.clone(),
             );
+
+            // build nest fields
+            let mut fields = Vec::<StructField>::new();
+            for field_info in nest.fields.values() {
+                fields.push(StructField::new(
+                    ItemVis::Public,
+                    field_info.name.clone(),
+                    nest.opts.field_type.clone(),
+                    false,
+                    field_info.attrs.clone(),
+                    None,
+                ));
+            }
+            // init full nest struct and output tokens
+            let nest = Nest {
+                common: nest_common,
+                fields,
+            };
+            nest_out.extend(UniversalStruct::from(nest).to_token_stream());
+
+            // add wrapped nest to gen_queue
+            if state.nest_repo.is_parent_ident(nest_ident) {
+                gen_queue.push_back(nest_ident);
+            }
+        }
+
+        // build extra
+        let mut extra_derives = state.default_derives();
+        extra_derives.extend(state.extra_opts.derive.iter().map(|d| d.to_token_stream()));
+        // init extra common struct info
+        let extra_common = StructCommon::new(
+            ItemVis::Public,
+            path_parse(quote!(#extra_ident)),
+            extra_derives,
+            extra_attrs.clone().iter().map(|a| a.to_token_stream()).collect(),
+            state.extra_opts.doc.clone(),
+        );
+        // init full extra struct and output tokens
+        let extra = Extra {
+            common: extra_common,
+            nest_fields: extra_nest_fields
+        };
+
+        // build wrapper
+        let mut wrapper_data_field_attrs = Vec::new();
+        // wrapper derives
+        let mut wrapper_derives = state.default_derives();
+        wrapper_derives.extend(state.wrapper_opts.derive.iter().map(|d| d.to_token_stream()));
+        // add flatten to wrapper data attrs
+        if state.wrapper_opts.flatten() {
+            wrapper_data_field_attrs.push(quote!(serde(flatten)));
+        }
+        // handle nested/root wrapper differences
+        let wrapper_subtype  = if origin_ident == &state.root_ident {
+            WrapperType::Root(RootWrapper{})
+        } else {
+            let wrapped_nest = state.nest_repo.get_by_ident(origin_ident).expect_or_abort(format!("Failed to resolve wrapped nest by ident: {origin_ident}").as_str());
+            let wrapper_optional = state.global.all_optional() || wrapped_nest.opts.optional();
+            WrapperType::Nested(NestedWrapper {
+                data_source_ident: origin_ident.clone(),
+                optional: wrapper_optional
+            })
+        };
+
+        // init wrapper common struct info
+        let wrapper_common = StructCommon::new(
+            ItemVis::Public,
+            path_parse(quote!(#wrapper_ident)),
+            wrapper_derives,
+            wrapper_attrs.clone().iter().map(|a| a.to_token_stream()).collect(),
+            state.wrapper_opts.doc.clone(),
+        );
+        // init full wrapper struct and output tokens
+        let wrapper = Wrapper {
+            common: wrapper_common,
+            data_field: StructField::new(
+                ItemVis::Public,
+                state.wrapper_opts.data_field_name(),
+                path_parse(quote!(#origin_ident)),
+                false,
+                wrapper_data_field_attrs,
+                state.wrapper_opts.data_field_doc.clone()
+            ),
+            extra_field: StructField::new(
+                ItemVis::Public,
+                state.wrapper_opts.extra_field_name(),
+                path_parse(quote!(#extra_ident)),
+                false,
+                vec![],
+                state.wrapper_opts.extra_field_doc.clone()
+            ),
+            wrapper_type: wrapper_subtype,
+        };
+
+        let impl_to_wrapped_with_out = generate_to_wrapped_with_impl(origin_ident, wrapper.common.ty_full(), extra.common.ty_full(), &extra.nest_fields);
+        impl_out.extend(impl_to_wrapped_with_out);
+
+        // non-primary wrapper, add `TransformToNest` util impl
+        // (allows for auto conversion of NestWrapper -> Nest for user TransformToNest impls)
+        if origin_ident != &state.root_ident {
+            let origin_path = parse2(quote!(#origin_ident)).unwrap_or_abort();
+            let transform_to_nest_impl_out = generate_deeply_nested_wrapper_transform_to_nest_impl(state, &wrapper, &origin_path);
+            impl_out.extend(transform_to_nest_impl_out);
+        }
+        UniversalStruct::from(wrapper).to_tokens(&mut out);
+        UniversalStruct::from(extra).to_tokens(&mut out);
+        out.extend(nest_out);
+    }
+
+    if !impl_out.is_empty() {
+        out.extend(quote!{
+            // -- begin shrinkwrap trait impls
+        });
+        out.extend(impl_out);
+    }
+    out
+}
+
+fn generate_to_wrapped_with_impl(origin_ident: &Ident, wrapper_type: &Path, extra_type: &Path, extra_fields: &Vec<StructField>) -> TokenStream {
+    // add transform as base predicate
+    let mut where_predicate_tokens = quote!(T: shrinkwrap::Transform,);
+    let mut extra_field_tokens = quote!();
+
+    // build following tokens for each nest:
+    // - where predicate containing `TransformToNest` bound
+    // - corresponding field within Extra struct
+    for extra_field in extra_fields {
+        let nest_field_name = &extra_field.name;
+        let nest_full_type = extra_field.ty_full();
+        where_predicate_tokens.extend(quote!{
+            T: shrinkwrap::TransformToNest<#nest_full_type, Data = #origin_ident>,
+        });
+        extra_field_tokens.extend(quote!{
+            #nest_field_name: transform.transform_to_nest(&self, options),
+        });
+    }
+
+    // generate the `ToWrappedWith` impl
+    quote! {
+        #[automatically_derived]
+        impl<T> shrinkwrap::ToWrappedWith<T> for #origin_ident
+        where
+            #where_predicate_tokens
+        {
+            type Wrapper = #wrapper_type;
+
+            fn to_wrapped_with(self, transform: &T, options: &<T as shrinkwrap::Transform>::Options) -> Self::Wrapper {
+                Self::Wrapper {
+                    extra: #extra_type {
+                        #extra_field_tokens
+                    },
+                    data: self
+                }
+            }
         }
     }
 }
 
-pub(crate) fn build_origin_map(nests: Vec<NestOpts>, root_ident: &Ident) -> NestOriginMap<'_> {
-    let mut map = NestOriginMap::new();
+fn generate_deeply_nested_wrapper_transform_to_nest_impl(state: &State, wrapper: &Wrapper, nest_full_type: &Path) -> TokenStream {
+    if let WrapperType::Nested(nested_wrapper) = &wrapper.wrapper_type {
+        let wrapper_type = wrapper.common.ty_full();
+        let origin_ident = &state.nest_repo
+            .get_parent_ident(&nested_wrapper.data_source_ident)
+            .expect_or_abort(format!("Internal derive error - failed to map nest origin for {}", &nested_wrapper.data_source_ident).as_str());
+        let transform_type = &state.global.transform;
 
-    for nest in nests {
-        let nest_origin = nest.origin(root_ident);
-        if !map.contains_key(nest_origin) {
-            map.insert(nest_origin.clone(), Vec::new());
-        }
-        map.get_mut(nest_origin).unwrap().push(nest); // just inserted
-    }
-    map
-}
+        if nested_wrapper.optional {
+            quote::quote!{
+                #[automatically_derived]
+                impl shrinkwrap::TransformToNest<Option<#wrapper_type>> for #transform_type {
+                    type Data = #origin_ident;
 
-pub(crate) fn origin_ident_is_parent(origin_ident: &Ident, origin_map: &NestOriginMap) -> bool {
-    origin_map.get(origin_ident).is_some_and(|entry| !entry.is_empty())
-}
+                    fn transform_to_nest(&self, data: &Self::Data, options: &Self::Options) -> Option<#wrapper_type> {
+                        use ::shrinkwrap::{ToNestWith, WrapDataWith};
+                        let nest_data: Option<#nest_full_type> = data.to_nest_with(self, options);
+                        nest_data.map(|some_nest_data| #wrapper_type::wrap_data_with(some_nest_data, self, options))
+                    }
+                }
+            }
+        } else {
+            quote::quote!{
+                #[automatically_derived]
+                impl shrinkwrap::TransformToNest<#wrapper_type> for #transform_type {
+                    type Data = #origin_ident;
 
-pub(crate) fn build_nest_fields_map(origin_fields: &Vec<DeriveItemFieldOpts>) -> NestFieldMap<'_> {
-    let mut map = NestFieldMap::new();
-
-    for origin_field in origin_fields {
-        if let Some(field_ident) = origin_field.ident.clone() {
-            for nest_in in &origin_field.nest_in_opts {
-                let nest_id_ident = nest_in.nest_id.clone();
-                let nest_id_name = nest_id_ident.to_string();
-                let field = NestField {
-                    name: field_ident.clone(),
-                    field_doc: nest_in.field_doc.clone(),
-                };
-                map.entry(nest_id_name)
-                    .and_modify(|e: &mut Vec<NestField>| {
-                        // check if the nest already contains this field
-                        if e.contains(&field) {
-                            abort!(field.name.span(), format!("Nest '{nest_id_ident}' already contains field: {field_ident}"));
-                        } else {
-                            e.push(field.clone());
-                        }
-                    })
-                    .or_insert(vec![field]);
+                    fn transform_to_nest(&self, data: &Self::Data, options: &Self::Options) -> #wrapper_type {
+                        use ::shrinkwrap::{ToNestWith, WrapDataWith};
+                        let nest_data: #nest_full_type = data.to_nest_with(self, options);
+                        #wrapper_type::wrap_data_with(nest_data, self, options)
+                    }
+                }
             }
         }
-    }
-    map
-}
-
-#[allow(unused_imports)]
-pub(crate) use expand::{expand_debug,expand_to_tokens,expand_tokens,expand_tokens_unfmt};
-
-/// no-op function signatures for feature toggle
-#[cfg(not(feature = "expand"))]
-#[allow(dead_code)]
-mod expand {
-    pub(crate) fn expand_debug<T: std::fmt::Debug>(_t: &T, _type_name: &'static str, _fn_name: &'static str) {}
-    pub(crate) fn expand_tokens(_tokens: &proc_macro2::TokenStream, _fn_name: &'static str) {}
-    pub(crate) fn expand_to_tokens<T: quote::ToTokens>(_t: &T, _type_name: &'static str, _fn_name: &'static str) {}
-    pub(crate) fn expand_tokens_unfmt(_tokens: &proc_macro2::TokenStream, _fn_name: &'static str) {}
-}
-
-#[cfg(feature = "expand")]
-#[allow(dead_code)]
-mod expand {
-    // all
-    const T_RESET: &str = "\x1b[0m";
-    // style
-    const T_BOLD: &str = "\x1b[1m";
-    const T_UNDERLINE: &str = "\x1b[4m";
-    // text color
-    const T_C_RESET: &str = "\x1b[39m";
-    const T_C_WHITE: &str = "\x1b[97m";
-    const T_C_BLACK: &str = "\x1b[30m";
-    const T_C_BLUE: &str = "\x1b[34m";
-    const T_C_RED: &str = "\x1b[31m";
-    // text background color
-    const T_B_RESET: &str = "\x1b[49m";
-    const T_B_BLUE: &str = "\x1b[44m";
-    const T_B_RED: &str = "\x1b[41m";
-
-    /// Dumps the type to stderr using it's Debug impl, but only if the `expand` feature is enabled. Otherwise this is a no-op
-    pub(crate) fn expand_debug<T: std::fmt::Debug>(t: &T, type_name: &'static str, fn_name: &'static str) {
-        eprintln!("\n{T_BOLD}{T_C_BLUE}------------------------------------------------{T_RESET}");
-        eprintln!("{T_BOLD}{T_B_BLUE}{T_C_BLACK}[{type_name}]{T_B_RESET} {T_C_BLUE}{fn_name}:{T_RESET} \n{t:#?}\n");
-        eprintln!("{T_BOLD}{T_C_BLUE}------------------------------------------------{T_RESET}");
-    }
-
-    /// Dumps token stream to stderr if the `expand` feature is enabled. Otherwise this is a no-op
-    ///
-    /// Attempts to format generated rust code, if valid. Otherwise the output is provided unformatted.
-    pub(crate) fn expand_tokens(tokens: &proc_macro2::TokenStream, fn_name: &'static str) {
-        eprintln!("\n{T_BOLD}{T_C_BLUE}------------------------------------------------{T_RESET}");
-        match syn::parse_file(tokens.to_string().as_str()) {
-            Ok(tokens_file) => {
-                let tokens_fmt = prettyplease::unparse(&tokens_file);
-                eprintln!("{T_BOLD}{T_C_BLUE}{fn_name}:{T_RESET} \n{}", &tokens_fmt);
-                eprintln!("{T_BOLD}{T_C_BLUE}------------------------------------------------{T_RESET}");
-            }
-            Err(err) => {
-                eprintln!("{T_BOLD}{T_B_RED}{T_C_BLACK}{fn_name}:{T_RESET} Failed to render formatted output - err: {err}.");
-                eprintln!("Output will be unformatted.\n");
-                expand_tokens_unfmt(tokens, fn_name)
-            }
-        }
-    }
-
-    /// Helper fn for expand_tokens, where the type's `ToTokens` is automatically called
-    pub(crate) fn expand_to_tokens<T: quote::ToTokens>(t: &T, type_name: &'static str, fn_name: &'static str) {
-        eprintln!("\n{T_BOLD}{T_C_BLUE}------------------------------------------------{T_RESET}");
-        let token_stream = t.to_token_stream();
-        match syn::parse_file(token_stream.to_string().as_str()) {
-            Ok(tokens_file) => {
-                let tokens_fmt = prettyplease::unparse(&tokens_file);
-                eprintln!("{T_BOLD}{T_B_BLUE}{T_C_BLACK}[{type_name}]{T_RESET} {T_BOLD}{T_C_BLUE}{fn_name}:{T_RESET} \n{}", &tokens_fmt);
-                eprintln!("{T_BOLD}{T_C_BLUE}------------------------------------------------{T_RESET}");
-            }
-            Err(err) => {
-                eprintln!("{T_B_RED}[{type_name}]{T_RESET} {T_BOLD}{T_C_RED}{fn_name}:{T_RESET} Failed to render formatted output - err: {err}.");
-                eprintln!("Output will be unformatted.\n");
-                expand_tokens_unfmt(&token_stream, fn_name)
-            }
-        }
-    }
-
-    /// Dumps token stream to stderr if the `expand` feature is enabled. Otherwise this is a no-op
-    ///
-    /// Attempts to format generated rust code, if valid. Otherwise the output is provided unformatted.
-    pub(crate) fn expand_tokens_unfmt(tokens: &proc_macro2::TokenStream, fn_name: &'static str) {
-        eprintln!("\n{T_BOLD}{T_C_BLUE}------------------------------------------------{T_RESET}");
-        eprintln!("{T_BOLD}{T_C_BLUE}{fn_name}{T_C_RESET} unformatted: \n{}", &tokens);
-        eprintln!("{T_BOLD}{T_C_BLUE}------------------------------------------------{T_RESET}");
+    } else {
+        abort_call_site!("Internal derive error - nested wrapper generation called on unlayered nest");
     }
 }
