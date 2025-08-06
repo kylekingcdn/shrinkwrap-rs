@@ -1,4 +1,7 @@
 [workspace]
-members = ["shrinkwrap", "shrinkwrap-macros"]
+members = [
+    "shrinkwrap-macros",
+    "examples/wrap-derive",
+    "examples/minimal",
+]
 resolver = "2"
-
