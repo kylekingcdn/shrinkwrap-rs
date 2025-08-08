@@ -68,7 +68,7 @@ If these suit your needs, great!
 - Provide variants of data alongside the original, "untransformed" data
 - Conditionally include/exclude variant groups at run-time
 - Allow for handling conversions that are dependent on user-data (e.g. locale, user settings)
-- Provide trivial support for chaining variations off of one another (9using the output of one as input for another).
+- Provide trivial support for chaining variations off of one another (using the output of one as input for another).
 - Process conversions which have service dependencies
 
 > [!NOTE]
