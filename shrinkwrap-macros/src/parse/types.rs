@@ -116,7 +116,9 @@ impl GlobalOpts {
     pub fn all_optional(&self) -> bool {
         self.all_optional.is_present()
     }
-    pub fn parse_transform_generic_params(meta: &syn::Meta) -> darling::Result<Option<TokenStream>> {
+    pub fn parse_transform_generic_params(
+        meta: &syn::Meta,
+    ) -> darling::Result<Option<TokenStream>> {
         let list = meta.require_list()?;
         Ok(Some(list.tokens.clone()))
     }

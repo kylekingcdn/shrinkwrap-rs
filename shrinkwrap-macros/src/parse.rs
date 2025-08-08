@@ -3,8 +3,8 @@ use proc_macro_error2::abort;
 use proc_macro2::TokenStream;
 use quote::ToTokens;
 use std::collections::HashMap;
-use syn::{Attribute, Ident, Meta};
 use syn::spanned::Spanned;
+use syn::{Attribute, Ident, Meta};
 
 pub mod types;
 

@@ -1,8 +1,8 @@
 use proc_macro_error2::{OptionExt, ResultExt, abort_call_site};
 use proc_macro2::TokenStream;
-use quote::{quote, ToTokens};
+use quote::{ToTokens, quote};
 use std::collections::{HashSet, VecDeque};
-use syn::{parse2, Ident, Meta, Path};
+use syn::{Ident, Meta, Path, parse2};
 
 use crate::{
     parse::{
