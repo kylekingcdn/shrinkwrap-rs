@@ -364,11 +364,16 @@ fn generate_deeply_nested_wrapper_transform_to_nest_impl(
                 .as_str(),
             );
         let transform_type = &state.global.transform;
+        let transform_generics = if let Some(params) = &state.global.transform_generic_params {
+            quote! { <#params>}
+        } else {
+            TokenStream::new()
+        };
 
         if nested_wrapper.optional {
             quote::quote! {
                 #[automatically_derived]
-                impl shrinkwrap::TransformToNest<Option<#wrapper_type>> for #transform_type {
+                impl #transform_generics shrinkwrap::TransformToNest<Option<#wrapper_type>> for #transform_type {
                     type Data = #origin_ident;
 
                     fn transform_to_nest(&self, data: &Self::Data, options: &Self::Options) -> Option<#wrapper_type> {
@@ -381,7 +386,7 @@ fn generate_deeply_nested_wrapper_transform_to_nest_impl(
         } else {
             quote::quote! {
                 #[automatically_derived]
-                impl shrinkwrap::TransformToNest<#wrapper_type> for #transform_type {
+                impl #transform_generics shrinkwrap::TransformToNest<#wrapper_type> for #transform_type {
                     type Data = #origin_ident;
 
                     fn transform_to_nest(&self, data: &Self::Data, options: &Self::Options) -> #wrapper_type {

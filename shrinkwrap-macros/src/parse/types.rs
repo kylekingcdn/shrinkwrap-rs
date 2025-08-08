@@ -79,6 +79,10 @@ pub struct GlobalOpts {
     /// Path of transform type used for this nest group
     pub transform: Path,
 
+    /// Generic type parameters in Transform type, with any required required trait bounds (e.g. `T: Serialize`)
+    #[darling(with = Self::parse_transform_generic_params, default)]
+    pub transform_generic_params: Option<TokenStream>,
+
     /// Enables auto-derivation of `schemars::JsonSchema` on all generated structs
     schema: Flag,
 
@@ -111,6 +115,10 @@ impl GlobalOpts {
     }
     pub fn all_optional(&self) -> bool {
         self.all_optional.is_present()
+    }
+    pub fn parse_transform_generic_params(meta: &syn::Meta) -> darling::Result<Option<TokenStream>> {
+        let list = meta.require_list()?;
+        Ok(Some(list.tokens.clone()))
     }
 }
 
