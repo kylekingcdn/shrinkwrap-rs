@@ -8,6 +8,8 @@ use std::fmt::Debug;
 /// ## Example impl
 ///
 /// ```
+/// use shrinkwrap::Transform;
+///
 /// struct MyTransformOpts {
 ///     with_text: bool,
 ///     with_value: bool,
@@ -29,16 +31,33 @@ pub trait Transform {
 ///
 /// Implementations are on the [`Transform`] struct that you have defined to handle conversions.
 ///
-/// ## Examples
+/// # Examples
 ///
-/// ### Standard
+/// ## Standard
 ///
 /// For regular (non-optional, without deep nesting), the `impl` should look like:
 ///
 /// ```
+/// # use shrinkwrap::{Transform, Wrap};
+/// #
+/// # #[derive(Debug, Clone, serde::Serialize, Wrap)]
+/// # #[shrinkwrap(transform = MyTransform)]
+/// # #[shrinkwrap(nest(id = "text", field_type = String))]
+/// # pub struct MyData {
+/// #     #[shrinkwrap(nests("text"))]
+/// #     uptime_sec: i64,
+/// # }
+/// #
+/// # struct MyTransform {}
+/// # type MyTransformOpts = ();
+/// # impl Transform for MyTransform {
+/// #     type Options = MyTransformOpts;
+/// # }
+/// use shrinkwrap::TransformToNest;
+///
 /// impl TransformToNest<MyDataNestedText> for MyTransform {
 ///     type Data = MyData;
-///     fn transform_to_nest(&self, data: &MyData, _: &MyTransformOptions) -> MyDataNestedText {
+///     fn transform_to_nest(&self, data: &MyData, _: &MyTransformOpts) -> MyDataNestedText {
 ///         MyDataNestedText {
 ///             uptime_sec: data.uptime_sec.to_string(),
 ///         }
@@ -46,15 +65,34 @@ pub trait Transform {
 /// }
 /// ```
 ///
-/// ### Optional
+/// ## Optional
 ///
 /// If your nest is optional, the `impl` should look like:
 ///
 /// ```
+/// # use shrinkwrap::{Transform, Wrap};
+/// #
+/// # struct MyTransform {}
+/// # struct MyTransformOpts {
+/// #     with_text: bool,
+/// # };
+/// # impl Transform for MyTransform {
+/// #     type Options = MyTransformOpts;
+/// # }
+/// #
+/// # #[derive(Debug, Clone, serde::Serialize, Wrap)]
+/// # #[shrinkwrap(transform = MyTransform)]
+/// # #[shrinkwrap(nest(id = "text", field_type = String, optional))]
+/// # pub struct MyData {
+/// #     #[shrinkwrap(nests("text"))]
+/// #     uptime_sec: i64,
+/// # }
+/// use shrinkwrap::TransformToNest;
+///
 /// impl TransformToNest<Option<MyDataNestedText>> for MyTransform {
 ///     type Data = MyData;
 ///
-///     fn transform_to_nest(&self, data: &MyData, options: &MyTransformOptions) -> Option<MyDataNestedText> {
+///     fn transform_to_nest(&self, data: &MyData, options: &MyTransformOpts) -> Option<MyDataNestedText> {
 ///         options.with_text.then(||
 ///             MyDataNestedText {
 ///                 uptime_sec: data.uptime_sec.to_string(),
@@ -64,7 +102,7 @@ pub trait Transform {
 /// }
 /// ```
 ///
-/// ### Deeply Nested
+/// ## Deeply Nested
 ///
 /// If the nest is layered under some other nest (deeply nested), the `impl` has a similar structure to the standard impl.
 /// The only real change is instead of using the primary data source (`MyData`) as the associated data type, you would use the parent nest.
@@ -72,10 +110,27 @@ pub trait Transform {
 /// This example assumes two nests, a top-level/standard nest `usd_value`, and a deeply nested `text` under `usd_value`
 ///
 /// ```
+/// # use shrinkwrap::{Transform, Wrap};
+/// #
+/// # #[derive(Debug, Clone, serde::Serialize, Wrap)]
+/// # #[shrinkwrap(transform = MyTransform)]
+/// # #[shrinkwrap(nest(id = "text", field_type = String))]
+/// # pub struct MyData {
+/// #     #[shrinkwrap(nests("text"))]
+/// #     uptime_sec: i64,
+/// # }
+/// #
+/// # struct MyTransform {}
+/// # type MyTransformOpts = ();
+/// # impl Transform for MyTransform {
+/// #     type Options = MyTransformOpts;
+/// # }
+/// use shrinkwrap::TransformToNest;
+///
 /// impl TransformToNest<TestDataNestedUsdValueText> for MyTransform {
 ///     type Data = TestDataNestedUsdValue;
 ///
-///     fn transform_to_nest(&self, data: &TestDataNestedUsdValue, _: &MyTransformOptions) -> TestDataNestedUsdValueText {
+///     fn transform_to_nest(&self, data: &TestDataNestedUsdValue, _: &MyTransformOpts) -> TestDataNestedUsdValueText {
 ///         TestDataNestedUsdValueText {
 ///             amount: format!("${:.2} USD", data.amount),
 ///         }
@@ -83,15 +138,32 @@ pub trait Transform {
 /// }
 /// ```
 ///
-/// ### Optional + Deeply Nested
+/// ## Optional + Deeply Nested
 ///
 /// Nothing special here, it's a combination of the modifications used in the previous two examples.
 ///
 /// ```
+/// # use shrinkwrap::{Transform, Wrap};
+/// #
+/// # #[derive(Debug, Clone, serde::Serialize, Wrap)]
+/// # #[shrinkwrap(transform = MyTransform)]
+/// # #[shrinkwrap(nest(id = "text", field_type = String))]
+/// # pub struct MyData {
+/// #     #[shrinkwrap(nests("text"))]
+/// #     uptime_sec: i64,
+/// # }
+/// #
+/// # struct MyTransform {}
+/// # type MyTransformOpts = ();
+/// # impl Transform for MyTransform {
+/// #     type Options = MyTransformOpts;
+/// # }
+/// use shrinkwrap::TransformToNest;
+///
 /// impl TransformToNest<Option<TestDataNestedUsdValueText>> for MyTransform {
 ///     type Data = TestDataNestedUsdValue;
 ///
-///     fn transform_to_nest(&self, data: &TestDataNestedUsdValue, _: &MyTransformOptions) -> Option<TestDataNestedUsdValueText> {
+///     fn transform_to_nest(&self, data: &TestDataNestedUsdValue, _: &MyTransformOpts) -> Option<TestDataNestedUsdValueText> {
 ///         options.with_text.then(||
 ///             TestDataNestedUsdValueText {
 ///                 amount: format!("${:.2} USD", data.amount),
@@ -101,7 +173,7 @@ pub trait Transform {
 /// }
 /// ```
 ///
-/// ## Notes
+/// # Notes
 ///
 /// When a nest has child nests layered under it (deeply nested), it's type will be swapped out with a dedicated 'injected' wrapper.
 ///
@@ -113,9 +185,49 @@ pub trait TransformToNest<N>: Transform {
     fn transform_to_nest(&self, data: &Self::Data, options: &Self::Options) -> N;
 }
 
-/// Not intended for implementation by consumers. Users should instead implement [`TransformToNest`].
+/// Allows for converting a data struct (by reference) to a supported nest type.
 ///
-/// [`ToNestWith`] will be implemented automatically when [`TransformToNest`] is implemented on the corresponding types.
+/// This is implemented automatically when [`TransformToNest`] is implemented on the corresponding types.
+///
+/// ## Examples
+///
+/// ```rust
+/// use serde::Serialize;
+/// use shrinkwrap::{ToNestWith, Transform, TransformToNest, Wrap};
+///
+/// #[derive(Debug, Clone, Serialize, Wrap)]
+/// #[shrinkwrap(transform = MyTransform)]
+/// #[shrinkwrap(nest(id = "text", field_type = String))]
+/// pub struct MyData {
+///     #[shrinkwrap(nests("text"))]
+///     uptime_sec: i64,
+/// }
+///
+/// struct MyTransform {}
+/// type MyTransformOpts = ();
+/// impl Transform for MyTransform {
+///     type Options = MyTransformOpts;
+/// }
+///
+/// impl TransformToNest<MyDataNestedText> for MyTransform {
+///     type Data = MyData;
+///     fn transform_to_nest(&self, data: &MyData, _options: &MyTransformOpts) -> MyDataNestedText {
+///         MyDataNestedText {
+///             uptime_sec: data.uptime_sec.to_string(),
+///         }
+///     }
+/// }
+///
+/// let transform = MyTransform {};
+/// let transform_opts = ();
+/// let data = MyData {
+///     uptime_sec: 10
+/// };
+///
+/// let text_variants: MyDataNestedText = data.to_nest_with(&transform, &transform_opts);
+/// let uptime_text = text_variants.uptime_sec;
+/// println!("Current uptime: {uptime_text}")
+/// ```
 pub trait ToNestWith<N, T: Transform>: Sized
 where
     T: TransformToNest<N, Data = Self>,
@@ -133,7 +245,7 @@ where
     }
 }
 
-/// `ToWrappedWith` is automatically implemented when all top-level nests have a [`TransformToNest`] impl on each nest type within the group. The same transform type  is implied (and cannot be configured anyhow).
+/// `ToWrappedWith` is automatically implemented for data structs when all top-level nests have a [`TransformToNest`] impl on each nest type within the group. All impls must be for the same transform type.
 ///
 /// Furthermore, any nests which are deeply nested require a [`TransformToNest`] converting from their respective data source (the parent nest).
 pub trait ToWrappedWith<T>: Debug + Clone + Serialize
@@ -145,9 +257,11 @@ where
     fn to_wrapped_with(self, transform: &T, options: &T::Options) -> Self::Wrapper;
 }
 
+/// Allows for converting a data struct into a wrapper.
+///
 /// Automatically implemented across types that provide `ToWrappedWith`.
 ///
-/// This allows for converting data via the Wrapper type instead
+/// The call is initiated from the wrapper Type itself. Aside from that, it is identical to [`to_wrapped_with`].
 pub trait WrapDataWith<D, T>
 where
     T: Transform,
