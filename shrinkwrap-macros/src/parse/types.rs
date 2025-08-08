@@ -199,8 +199,8 @@ pub struct WrapperOpts {
     #[darling(default)]
     pub derive: PathList,
 
-    /// Sets documentation for the generated Wrapper struct
-    pub doc: Option<String>,
+    /// Sets documentation for all generated Wrapper structs
+    pub struct_doc: Option<String>,
 
     /// Field name for data struct, defaults to data
     #[darling(default)]
@@ -296,8 +296,8 @@ pub struct ExtraOpts {
     #[darling(default)]
     pub derive: PathList,
 
-    /// Sets struct-level documentation for the generated Extra struct
-    pub doc: Option<String>,
+    /// Sets struct-level documentation for all generated Extra structs
+    pub struct_doc: Option<String>,
 }
 impl ExtraOpts {
     fn struct_name_suffix_default() -> Ident {

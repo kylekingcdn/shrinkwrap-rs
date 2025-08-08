@@ -201,7 +201,7 @@ fn generate_structs(state: &State) -> TokenStream {
                 .iter()
                 .map(|a| a.to_token_stream())
                 .collect(),
-            state.extra_opts.doc.clone(),
+            state.extra_opts.struct_doc.clone(),
         );
         // init full extra struct and output tokens
         let extra = Extra {
@@ -248,7 +248,7 @@ fn generate_structs(state: &State) -> TokenStream {
                 .iter()
                 .map(|a| a.to_token_stream())
                 .collect(),
-            state.wrapper_opts.doc.clone(),
+            state.wrapper_opts.struct_doc.clone(),
         );
         // init full wrapper struct and output tokens
         let wrapper = Wrapper {
