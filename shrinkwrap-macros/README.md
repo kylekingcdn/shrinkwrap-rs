@@ -1,11 +1,10 @@
 # `shrinkwrap-macros`
 
-This is the proc macros counterpart library for `shrinkwrap`.
+This is the proc macros / derive counterpart library for `shrinkwrap`.
+
+See the [`shrinkwrap` README](https://github.com/kylekingcdn/shrinkwrap-rs) for more info.
 
 ---
-
-> [!CAUTION]
-> This is currently a work-in-progress. The first publish to crates.io was for crate name reservation - it is an empty library.
 
 ## Links
 

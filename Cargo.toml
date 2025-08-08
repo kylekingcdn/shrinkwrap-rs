@@ -3,5 +3,6 @@ members = [
     "shrinkwrap-macros",
     "examples/wrap-derive",
     "examples/minimal",
+    "examples/readme",
 ]
 resolver = "2"
