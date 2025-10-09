@@ -11,7 +11,7 @@ where
     T: Transform,
 {
     type Wrapper;
-    type Error;
+    type Error: Debug;
 
     fn try_to_wrapped_with(self, transform: &T, options: &T::Options) -> Result<Self::Wrapper, Self::Error>;
 }

@@ -1,3 +1,5 @@
+use std::fmt::Debug;
+
 use crate::transform::Transform;
 
 /// Fallible version of [`TransformToNest`](crate::nest::TransformToNest)
@@ -5,7 +7,7 @@ use crate::transform::Transform;
 /// See [`TransformToNest`](crate::nest::TransformToNest) for more information
 pub trait TryTransformToNest<N>: Transform {
     type Data;
-    type Error;
+    type Error: Debug;
 
     fn try_transform_to_nest(&self, data: &Self::Data, options: &Self::Options) -> Result<N, Self::Error>;
 }
