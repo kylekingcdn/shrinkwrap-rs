@@ -83,6 +83,9 @@ pub struct GlobalOpts {
     #[darling(with = Self::parse_transform_generic_params, default)]
     pub transform_generic_params: Option<TokenStream>,
 
+    #[darling(default)]
+    pub fallible: Option<GlobalFallibleNestedOpts>,
+
     /// Enables auto-derivation of `schemars::JsonSchema` on all generated structs
     schema: Flag,
 
@@ -122,6 +125,13 @@ impl GlobalOpts {
         let list = meta.require_list()?;
         Ok(Some(list.tokens.clone()))
     }
+}
+
+/// Options for struct nest attribute
+#[derive(Debug, Clone, FromMeta)]
+pub struct GlobalFallibleNestedOpts {
+    /// Error type used for Result returned by trait impls
+    pub error: Ident,
 }
 
 pub struct State {
