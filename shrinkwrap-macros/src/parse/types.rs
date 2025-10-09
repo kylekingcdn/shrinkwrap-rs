@@ -103,7 +103,7 @@ pub struct GlobalOpts {
     /// - [`Clone`](core::clone::Clone)
     /// - [`serde::Serialize`](serde::Serialize)
     #[darling(default)]
-    pub derive_all: PathList,
+    derive_all: PathList,
 }
 #[allow(dead_code)]
 impl GlobalOpts {
