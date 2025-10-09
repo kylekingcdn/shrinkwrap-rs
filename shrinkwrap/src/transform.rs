@@ -262,7 +262,7 @@ where
 /// Automatically implemented across types that provide `ToWrappedWith`.
 ///
 /// The call is initiated from the wrapper Type itself. Aside from that, it is identical to [`to_wrapped_with`].
-pub trait WrapDataWith<D, T>
+pub trait WrapDataWith<D, T>: Sized
 where
     T: Transform,
     D: ToWrappedWith<T>,
