@@ -1,11 +1,11 @@
 #![doc = "Helper types used to associate related types"]
 #![allow(dead_code)]
 
-use darling::util::SpannedValue;
+use darling::util::{Flag, SpannedValue};
 use proc_macro_error2::{abort, emit_error};
 use proc_macro2::TokenStream;
-use std::collections::HashMap;
-use syn::{Ident, LitStr};
+use std::{collections::HashMap};
+use syn::{Ident, LitStr, Path};
 
 use crate::parse::types::NestOpts;
 
@@ -22,14 +22,35 @@ pub struct NestInfo {
 
     /// maps field names to field data for a given nest
     pub fields: HashMap<Ident, NestField>,
+
+    pub transform_gen: Option<NestTransformGeneration>,
 }
 impl NestInfo {
-    pub fn new(ident: Ident, nest_opts: NestOpts) -> Self {
+    pub fn new(ident: Ident, nest_opts: NestOpts, transform_gen: Option<NestTransformGeneration>) -> Self {
         Self {
             ident,
             opts: nest_opts,
             struct_attrs: NestStructAttrInfo::default(),
             fields: HashMap::new(),
+            transform_gen,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct NestTransformGeneration {
+    pub nest_group: Path,
+    pub value_type: Path,
+
+    // Set if nest is optional
+    pub options_filter_field: Option<Ident>,
+}
+impl NestTransformGeneration {
+    pub fn new(nest_group: Path, value_type: Path, options_filter_field: Option<Ident>) -> Self {
+        Self {
+            nest_group,
+            value_type,
+            options_filter_field,
         }
     }
 }
@@ -122,6 +143,33 @@ impl NestRepo {
             );
         }
 
+        // handle derive_transform
+        if let Some(field_type) = opts.field_type.as_ref() && let Some(derive_transform) = opts.derive_transform.as_ref() {
+            emit_error!(
+                &field_type,
+                format!("field_type defined here")
+            );
+            emit_error!(
+                &derive_transform.span(),
+                format!("derive_transform defined here")
+            );
+            abort!(&derive_transform.span(), "Nest cannot have both `field_type` and `derive_transform` configured simultaneously");
+        }
+        else if opts.field_type.is_none() && opts.derive_transform.is_none() {
+            abort!(opts.id.span(), "Nest must have either `field_type` or `derive_transform` configured");
+        }
+
+        // validate options_field set only for optional nests
+        #[allow(clippy::collapsible_if)]
+        if let Some(derive_transform) = opts.derive_transform.as_ref() {
+            if let Some(options_field) = derive_transform.options_field.as_ref() && !opts.optional() {
+                abort!(
+                    options_field,
+                    format!("options_field not supported for non-optional nests")
+                );
+            }
+        }
+
         let origin = opts.origin(&self.root_ident).to_owned();
 
         self.nest_parent_map
@@ -133,8 +181,22 @@ impl NestRepo {
             .entry(origin)
             .and_modify(|children| children.push(nest_ident.clone()))
             .or_insert(vec![nest_ident.clone()]);
+
+        let transform_gen = opts.derive_transform.as_ref().map(|derive_transform| {
+            let options_field = if opts.optional.is_present() {
+                Some(derive_transform.options_field_name_or_default())
+            } else {
+                None
+            };
+            let derive_transform = derive_transform.clone().into_inner();
+            NestTransformGeneration::new(derive_transform.nest, derive_transform.value, options_field)
+        });
+
+        let nest_info = NestInfo::new(nest_ident.clone(), opts, transform_gen);
+        eprintln!("nest_info built: {nest_info:#?}");
         self.nest_map
-            .insert(nest_ident.clone(), NestInfo::new(nest_ident, opts));
+            .insert(nest_ident, nest_info);
+
     }
 
     pub fn count(&self) -> usize {

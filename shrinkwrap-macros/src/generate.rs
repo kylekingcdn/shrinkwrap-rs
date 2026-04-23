@@ -169,7 +169,7 @@ fn generate_structs(state: &State) -> TokenStream {
                 fields.push(StructField::new(
                     ItemVis::Public,
                     field_info.name.clone(),
-                    nest.opts.field_type.clone(),
+                    nest.opts.resolve_field_type().clone(),
                     false,
                     field_info.attrs.clone(),
                     None,

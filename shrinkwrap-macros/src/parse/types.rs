@@ -5,7 +5,8 @@ use std::collections::HashSet;
 use darling::ast::Data;
 use darling::util::{Flag, Override, PathList, SpannedValue};
 use darling::{FromDeriveInput, FromField, FromMeta};
-use heck::AsUpperCamelCase;
+use heck::{AsUpperCamelCase, AsSnakeCase};
+use proc_macro_error2::OptionExt;
 use proc_macro2::{Span, TokenStream};
 use quote::{ToTokens, format_ident, quote};
 use syn::{Attribute, Ident, LitStr, Meta, Path};
@@ -388,8 +389,13 @@ pub struct NestOpts {
     #[darling(default)]
     pub derive: PathList,
 
-    /// sets the type for the fields in the nested struct
-    pub field_type: Path,
+    /// Sets the type for the fields in the nested struct.
+    /// Cannot be used alongside `derive_transform` within the same nest.
+    pub field_type: Option<Path>,
+
+    /// Derive `TransformToNest`/`TryTransformToNest` automatically.
+    /// Cannot be used alongside `field_type` within the same nest.
+    pub derive_transform: Option<SpannedValue<DeriveNestTransformOpts>>,
 
     /// Embed this nest within another nest
     pub nested: Option<DeeplyNestedOpts>,
@@ -473,6 +479,17 @@ impl NestOpts {
             None => root_ident,
         }
     }
+    // scoped validation should have been done prior to any access, allow expect here
+    pub fn resolve_field_type(&self) -> &Path {
+        if let Some(field_type) = self.field_type.as_ref() {
+            field_type
+        } else {
+            &self.derive_transform
+                .as_ref()
+                .expect("Validated field_type XOR derive_transform(value)")
+                .value
+        }
+    }
 }
 impl ValidateScoped for NestOpts {
     fn validate_within_scope(&self) -> HasInvalidity {
@@ -480,6 +497,8 @@ impl ValidateScoped for NestOpts {
         if self.id.is_empty() {
             issues.push("Nest `id` cannot be empty".into());
         }
+        // validation of `optional` XNOR `options_field` is done out of
+        // type scope to allow for handling of global all_optional opt
 
         if issues.is_empty() {
             None
@@ -487,6 +506,69 @@ impl ValidateScoped for NestOpts {
             issues.into()
         }
     }
+}
+
+/// Configuration for automatically deriving `TransformToNest`/`TryTransformToNest`.
+#[derive(Debug, Clone, FromMeta)]
+pub struct DeriveNestTransformOpts {
+    /// Sets the user-defined type representing this nest variation.
+    /// This type can be reused in other `shrinkwrap::Wrap` impl'd structs
+    /// (typically 1 Nest type impl per unique nest ID).
+    ///
+    /// Type must have an impl for `NestGroup` where the `NestGroup::Value`
+    /// associated type matches the `value` attribute provided here.
+    pub nest: Path,
+
+    /// Sets the resulting value type associated with the genetated fields in
+    /// this nest.  This type can be reused in other `shrinkwrap::Wrap` impl'd
+    /// structs (and even in other nest under the same wrapper - typically only
+    /// done in cases of deep nesting).
+    ///
+    /// Type must implement `NestValueType`.
+    pub value: Path,
+
+    /// Only compatible with `optional` nests. Defaults to `"with_"` + `value`
+    /// attr (as `snake_case`) if unset and nest is optional.
+    ///
+    /// Allows implementor to retain control of conditional nest rendering when
+    ///  using `derive_transform`.
+    ///
+    /// Should be set to the name of a bool field provided by the struct
+    /// implementing the `Transform:::Options` associated type.
+    /// The derived transform impl will skip rendering if this field if set to `false`.
+    pub options_field: Option<Ident>,
+}
+impl DeriveNestTransformOpts {
+    pub fn value_path_basename(&self) -> Result<Ident, darling::Error> {
+        match self.value.segments.last().cloned() {
+            Some(path_ident) => {
+                Ok(path_ident.ident)
+            },
+            None => {
+                Err(darling::Error::custom(
+                    format_ident!("Invalid derive_transform `value` path")
+                ).with_span(&self.value))
+            }
+        }
+    }
+    pub fn options_field_name_or_default(&self) -> Ident {
+        if let Some(options_name) = self.options_field.clone() {
+            options_name
+        } else {
+            self.options_field_name_default()
+        }
+    }
+    fn options_field_name_default(&self) -> Ident {
+        let value_type_name = self
+            .value_path_basename()
+            .ok()
+            .expect_or_abort("Failed to generate options field name from value type");
+        let suffix = AsSnakeCase(value_type_name.to_string());
+        format_ident!("with_{suffix}")
+    }
+}
+impl ValidateScoped for DeriveNestTransformOpts {
+
 }
 
 // - helper types
