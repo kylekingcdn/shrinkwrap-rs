@@ -79,29 +79,38 @@ pub struct GlobalOpts {
     /// Path of transform type used for this nest group
     pub transform: Path,
 
-    /// Generic type parameters in Transform type, with any required required trait bounds (e.g. `T: Serialize`)
+    /// Generic type parameters in Transform type, with any required trait
+    /// bounds (e.g. `T: Serialize`)
     #[darling(with = Self::parse_transform_generic_params, default)]
     pub transform_generic_params: Option<TokenStream>,
 
     #[darling(default)]
     pub fallible: Option<GlobalFallibleNestedOpts>,
 
-    /// Enables auto-derivation of `schemars::JsonSchema` on all generated structs
+    /// Enables auto-derivation of `schemars::JsonSchema` on all generated
+    /// structs
     schema: Flag,
 
-    /// Implies `schema`, add #[schemars(inline)] to all generated structs, Adds a schemars rename on the primary wrapper to the origin data struct name.
+    /// Implies `schema`, add #[schemars(inline)] to all generated structs,
+    /// Adds a schemars rename on the primary wrapper to the origin data struct
+    /// name.
     inline: Flag,
 
     /// Equivalent to setting `optional` on all nests.
     all_optional: Flag,
 
-    /// List of derives to apply to every generated struct: e.g. each wrapper, extra, nest.
+    /// List of derives to apply to every generated struct: e.g. each wrapper,
+    /// extra, nest.
     ///
-    /// **Note**: Derive lists are merged. You are free to use both `derive_all` as well as `derive` on specific struct types (wrapper, extra, nest).
+    /// **Note**: Derive lists are merged. You are free to use both `derive_all`
+    /// as well as `derive` on specific struct types (wrapper, extra, nest).
     ///
-    /// However, you will still receive an error if the same derive is included multiple times. This applies to merged derive lists.
+    /// However, you will still receive an error if the same derive is included
+    /// multiple times. This applies to merged derive lists.
     ///
-    /// Regardless of user settings, every generated struct will always derive the following (and therefore should not be manually included in either a shrinkwrap `derive` attr, or the `derive_all` attr)
+    /// Regardless of user settings, every generated struct will always derive
+    /// the following (and therefore should not be manually included in either
+    /// a shrinkwrap `derive` attr, or the `derive_all` attr)
     /// - [`Debug`](core::fmt::Debug)
     /// - [`Clone`](core::clone::Clone)
     /// - [`serde::Serialize`](serde::Serialize)
@@ -204,11 +213,13 @@ impl ValidateScoped for DeriveItemFieldOpts {}
 /// Options for struct wrapper attribute
 #[derive(Debug, Clone, Default, FromMeta)]
 pub struct WrapperOpts {
-    /// Set the struct name suffix used by all associated wrappers (primary + any nested wrappers).
+    /// Set the struct name suffix used by all associated wrappers (primary +
+    /// any nested wrappers).
     ///
     /// Defaults to `Wrapper`
     ///
-    /// E.g. For a data struct named: `MyData`, the default corresponding wrapper struct would be `MyDataWrapper`
+    /// E.g. For a data struct named: `MyData`, the default corresponding
+    /// wrapper struct would be `MyDataWrapper`
     #[darling(default)]
     struct_suffix: Option<Ident>,
 
@@ -228,26 +239,38 @@ pub struct WrapperOpts {
 
     /// Serializes data contents into the wrapper inline via `#[serde(flatten)`.
     ///
-    /// **NOTE:** `#[serde(flatten)]` is applied to the wrapper data field, **and not the wrapper itself**.
+    /// **NOTE:** `#[serde(flatten)]` is applied to the wrapper data field,
+    ///  **and not the wrapper itself**.
     ///
-    /// `flatten = false` will disable data flattening and retain nesting during serialization.
+    /// `flatten = false` will disable data flattening and retain nesting during
+    /// serialization.
     ///
     /// ### Side effects
     ///
-    /// Disabling data flattening may cause some unexpected changes in the rendered data hierarchy (via `#[shrinkwrap(nest(.., nested(origin = ..)))]`).
+    /// Disabling data flattening may cause some unexpected changes in the
+    ///  rendered data hierarchy (via `#[shrinkwrap(nest(.., nested(origin = ..)))]`).
     ///
-    /// The current behaviour for parent nests (nests with subsequent data further nested below them), is to provide an intermediate `Wrapper` between itself and the deeply nested data.
+    /// The current behaviour for parent nests (nests with subsequent data
+    /// further nested below them), is to provide an intermediate `Wrapper`
+    ///  between itself and the deeply nested data.
     ///
-    /// This is done on nests for the the same reason it is done on root data struct - it provides the exact same set of benefits.
+    /// This is done on nests for the the same reason it is done on root data struct
+    ///  - it provides the exact same set of benefits.
     ///
-    /// As a result, when flattening is disabled, data trees become inconsistent. Where non-leaf nests have an extra 'data' object between it and it's data, whereas leaf nests will not have this.
+    /// As a result, when flattening is disabled, data trees become inconsistent.
+    /// Where non-leaf nests have an extra 'data' object between it and it's data,
+    /// whereas leaf nests will not have this.
     ///
-    /// For APIs, this will inevitably lead to a terrible UX for clients. When resources/data structs are shared among responses, the resulting effect is data remaining the same, yet the surrounding schema 'skeleton' changes per-route.
+    /// For APIs, this will inevitably lead to a terrible UX for clients.
+    /// When resources/data structs are shared among responses,
+    /// the resulting effect is data remaining the same,
+    /// yet the surrounding schema 'skeleton' changes per-route.
     ///
     /// ##### This is the opposite of what most would expect.
     ///
     /// <div class="warning">
-    /// If the derived structs will be exposed as a response format, API or otherwise, then<br>
+    /// If the derived structs will be exposed as a response format, API or
+    /// otherwise, then<br>
     /// <br>
     /// <b>Do not disable struct flattening</b>
     /// </div>
@@ -305,11 +328,13 @@ impl ValidateScoped for WrapperOpts {}
 pub struct ExtraOpts {
     /// Set the `extra` struct name suffix - defaults to `Extra`
     ///
-    /// E.g. For a data struct named: `MyData`, the default corresponding extra struct would be `MyDataExtra`
+    /// E.g. For a data struct named: `MyData`,
+    /// the default corresponding extra struct would be `MyDataExtra`
     #[darling(default)]
     struct_suffix: Option<Ident>,
 
-    /// Derives to apply to the extra struct - Debug, Clone, and serde::Serialize are required and auto-derived
+    /// Derives to apply to the extra struct.
+    /// Debug, Clone, and `serde::Serialize` are required and auto-derived
     #[darling(default)]
     pub derive: PathList,
 
@@ -341,35 +366,43 @@ pub struct DeeplyNestedOpts {
 
 #[derive(Debug, Clone, FromMeta)]
 pub struct NestOpts {
-    /// used for specifying/identifying a nest from an attribute. Must be unique among all nests under a given Data struct
+    /// used for specifying/identifying a nest from an attribute.
+    /// Must be unique among all nests under a given Data struct
     pub id: SpannedValue<String>,
 
     /// used for the nest field name under `data.extra`.
-    /// This should typically be identical and must be unique among the other sibling nests.
-    /// Typically this should only be used when implementing nested data hierarchies via [`origin`](Self::origin)
+    /// This should typically be identical and must be
+    /// unique among the other sibling nests.
+    /// Typically this should only be used when implementing
+    /// nested data hierarchies via [`origin`](Self::origin)
     ///
     /// Defaults to `self.id`
     field_name: Option<Ident>,
 
-    /// sets the name of the nests' generated struct - defaults to `{DataStructName}{UpperCamel(field_name ? field_name : id)}`
+    /// sets the name of the nests' generated struct - defaults to
+    /// `{DataStructName}{UpperCamel(field_name ? field_name : id)}`
     rename: Option<Ident>,
 
-    /// Derives to apply to the nest struct - Debug, Clone, and serde::Serialize are required and auto-derived
+    /// Derives to apply to the nest struct - `Debug`, `Clone`, and
+    /// `serde::Serialize` are required and auto-derived
     #[darling(default)]
     pub derive: PathList,
 
     /// sets the type for the fields in the nested struct
     pub field_type: Path,
 
+    /// Embed this nest within another nest
     pub nested: Option<DeeplyNestedOpts>,
 
     /// Sets the struct-level documentation for the generated Nest struct
     pub struct_doc: Option<String>,
 
-    /// Sets the documentation of any fields that refer to this type (e.g. in `Extra` structs)
+    /// Sets the documentation of any fields that refer to this type
+    /// (e.g. in `Extra` structs)
     pub parent_field_doc: Option<String>,
 
-    /// The parent extra struct will type the field for this nest with `Option<T>`, e.g, the generated extra struct would look like
+    /// The parent extra struct will type the field for this nest with
+    /// `Option<T>`, e.g, the generated extra struct would look like
     /// ```rust
     /// pub struct MyDataExtra {
     ///     pub text: Option<MyDataNestedText>,
@@ -396,7 +429,8 @@ impl NestOpts {
         root_ident: &Ident,
         field_name: &Ident,
     ) -> Ident {
-        // To avoid obnoxiously long struct names, only include the nested keyword once (root nests)
+        // To avoid obnoxiously long struct names, only include the nested
+        // keyword once (root nests)
         let region_descriptor = if origin_ident == root_ident {
             "Nested"
         } else {
@@ -406,14 +440,14 @@ impl NestOpts {
 
         format_ident!("{}{region_descriptor}{}", origin_ident, suffix)
     }
-    /// `root_ident` is the ident of the top-level data struct containing derive(Wrap)
+    /// `root_ident` is the ident of the top-level data struct containing derive(Wrap).
     /// It is used to form the base struct name when an origin isn't explicitly provided
     pub fn struct_name_default(&self, root_ident: &Ident) -> Ident {
         let origin_ident = self.origin(root_ident);
         let field_name = self.field_name();
         Self::build_default_struct_name(origin_ident, root_ident, &field_name)
     }
-    /// `root_ident` is the ident of the top-level data struct containing derive(Wrap)
+    /// `root_ident` is the ident of the top-level data struct containing derive(Wrap).
     /// It is used to form the base struct name when an origin isn't explicitly provided
     pub fn struct_name(&self, root_ident: &Ident) -> Ident {
         match &self.rename {
