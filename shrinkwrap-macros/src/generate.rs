@@ -454,6 +454,7 @@ fn generate_deeply_nested_wrapper_transform_to_nest_impl(
 
                     fn transform_to_nest(&self, data: &Self::Data, options: &Self::Options) -> Option<#wrapper_type> {
                         use ::shrinkwrap::{ToNestWith, WrapDataWith};
+
                         let nest_data: Option<#nest_full_type> = data.to_nest_with(self, options);
                         nest_data.map(|some_nest_data| #wrapper_type::wrap_data_with(some_nest_data, self, options))
                     }
@@ -467,6 +468,7 @@ fn generate_deeply_nested_wrapper_transform_to_nest_impl(
 
                     fn transform_to_nest(&self, data: &Self::Data, options: &Self::Options) -> #wrapper_type {
                         use ::shrinkwrap::{ToNestWith, WrapDataWith};
+
                         let nest_data: #nest_full_type = data.to_nest_with(self, options);
                         #wrapper_type::wrap_data_with(nest_data, self, options)
                     }
@@ -514,6 +516,7 @@ fn generate_deeply_nested_wrapper_try_transform_to_nest_impl(
 
                     fn try_transform_to_nest(&self, data: &Self::Data, options: &Self::Options) -> Result<Option<#wrapper_type>, Self::Error> {
                         use ::shrinkwrap::{TryToNestWith, TryWrapDataWith};
+
                         let nest_data: Option<#nest_full_type> = data.try_to_nest_with(self, options)?;
                         match nest_data {
                             None => Ok(None),
@@ -531,6 +534,7 @@ fn generate_deeply_nested_wrapper_try_transform_to_nest_impl(
 
                     fn try_transform_to_nest(&self, data: &Self::Data, options: &Self::Options) -> Result<#wrapper_type, Self::Error> {
                         use ::shrinkwrap::{TryToNestWith, TryWrapDataWith};
+
                         let nest_data: #nest_full_type = data.try_to_nest_with(self, options)?;
                         #wrapper_type::try_wrap_data_with(nest_data, self, options)?
                     }
