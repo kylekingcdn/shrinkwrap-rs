@@ -129,7 +129,7 @@ fn generate_structs(state: &State) -> TokenStream {
                 ItemVis::Public,
                 nest.opts.field_name(),
                 path_parse(nest_extra_base_type.to_token_stream()),
-                state.global.all_optional() || nest.opts.optional(),
+                nest.opts.optional(),
                 vec![],
                 nest.opts.parent_field_doc.clone(),
             ));
@@ -231,7 +231,7 @@ fn generate_structs(state: &State) -> TokenStream {
             let wrapped_nest = state.nest_repo.get_by_ident(origin_ident).expect_or_abort(
                 format!("Failed to resolve wrapped nest by ident: {origin_ident}").as_str(),
             );
-            let wrapper_optional = state.global.all_optional() || wrapped_nest.opts.optional();
+            let wrapper_optional = wrapped_nest.opts.optional();
             WrapperType::Nested(NestedWrapper {
                 data_source_ident: origin_ident.clone(),
                 optional: wrapper_optional,

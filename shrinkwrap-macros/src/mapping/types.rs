@@ -72,9 +72,11 @@ pub struct NestRepo {
     nest_id_span_map: HashMap<String, SpannedValue<String>>,
 
     root_ident: Ident,
+
+    global_optional: Flag,
 }
 impl NestRepo {
-    pub fn new(root_ident: Ident) -> Self {
+    pub fn new(root_ident: Ident, global_optional: Flag) -> Self {
         Self {
             root_ident,
             nest_map: HashMap::new(),
@@ -82,10 +84,17 @@ impl NestRepo {
             nest_parent_map: HashMap::new(),
             nest_id_map: HashMap::new(),
             nest_id_span_map: HashMap::new(),
+            global_optional,
         }
     }
 
-    pub fn insert(&mut self, opts: NestOpts) {
+    pub fn insert(&mut self, mut opts: NestOpts) {
+        // fallback to global all optional
+        // (don't overwrite if optional is present on nest - avoids span redirection)
+        if !opts.optional.is_present() && self.global_optional.is_present() {
+            opts.optional = self.global_optional;
+        }
+
         // validate insert
         let id_str = opts.id.as_ref();
         if self.id_exists(id_str) {

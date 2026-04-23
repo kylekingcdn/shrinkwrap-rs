@@ -116,9 +116,6 @@ impl GlobalOpts {
     pub fn inline(&self) -> bool {
         self.inline.is_present()
     }
-    pub fn all_optional(&self) -> bool {
-        self.all_optional.is_present()
-    }
     pub fn parse_transform_generic_params(
         meta: &syn::Meta,
     ) -> darling::Result<Option<TokenStream>> {
@@ -151,7 +148,7 @@ impl State {
         root_ident: Ident,
     ) -> Self {
         Self {
-            nest_repo: NestRepo::new(root_ident.clone()),
+            nest_repo: NestRepo::new(root_ident.clone(), global.all_optional),
 
             global,
             wrapper_opts: wrapper,
