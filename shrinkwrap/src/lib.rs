@@ -1,13 +1,13 @@
 pub mod to_nest;
 pub mod transform;
-pub mod try_nest;
+pub mod try_to_nest;
 pub mod try_wrap;
 pub mod wrap;
 
 pub use crate::{
     to_nest::{ToNestWith, TransformToNest},
     transform::Transform,
-    try_nest::{TryToNestWith, TryTransformToNest},
+    try_to_nest::{TryToNestWith, TryTransformToNest},
     try_wrap::{TryWrapDataWith, TryToWrappedWith},
     wrap::{ToWrappedWith, WrapDataWith},
 };
