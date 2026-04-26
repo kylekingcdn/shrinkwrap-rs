@@ -138,7 +138,7 @@ impl GlobalOpts {
 #[derive(Debug, Clone, FromMeta)]
 pub struct GlobalFallibleNestedOpts {
     /// Error type used for Result returned by trait impls
-    pub error: Ident,
+    pub error: Path,
 }
 
 pub struct State {
