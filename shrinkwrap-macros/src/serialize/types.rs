@@ -81,13 +81,13 @@ impl StructField {
     pub fn ty_base(&self) -> &Path {
         &self.ty
     }
-    pub fn ty_full(&self) -> Path {
-        let ty = &self.ty;
-        let tokens = match self.optional {
-            true => quote!(Option<#ty>),
-            false => quote!(#ty),
-        };
-        path_parse(tokens)
+    pub fn ty_as_option(&self) -> Path {
+        if self.optional {
+            let ty = &self.ty;
+            parse_quote!(Option<#ty>)
+        } else {
+            self.ty.clone()
+        }
     }
 }
 impl ToTokens for StructField {
@@ -95,7 +95,7 @@ impl ToTokens for StructField {
         let Self {
             vis, name, attrs, ..
         } = &self;
-        let ty = self.ty_full();
+        let ty = self.ty_as_option();
         let mut attr_tokens = quote! {#( #[#attrs] )*};
         if let Some(doc) = &self.doc {
             attr_tokens.extend(quote! {#[doc = #doc]});
