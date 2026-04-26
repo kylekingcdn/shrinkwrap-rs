@@ -3,9 +3,7 @@
 use darling::ToTokens;
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{Ident, Path};
-
-use crate::util::path_parse;
+use syn::{Ident, Path, parse_quote};
 
 #[allow(dead_code)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]

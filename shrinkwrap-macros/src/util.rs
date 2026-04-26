@@ -1,21 +1,3 @@
-use darling::util::PathList;
-use proc_macro2::TokenStream;
-use syn::{Path, parse2};
-
-pub fn path_parse(tokens: TokenStream) -> Path {
-    let error_message = format!("Invalid path: {:#?}", tokens.to_string());
-    parse2(tokens).expect(&error_message)
-}
-
-#[allow(dead_code)]
-pub fn pathlist_parse(tokens: Vec<TokenStream>) -> PathList {
-    let mut paths = Vec::with_capacity(tokens.len());
-    for token in tokens {
-        paths.push(path_parse(token));
-    }
-    PathList::new(paths)
-}
-
 #[allow(unused_imports)]
 pub(crate) use expand::{expand_debug, expand_to_tokens, expand_tokens, expand_tokens_unfmt};
 

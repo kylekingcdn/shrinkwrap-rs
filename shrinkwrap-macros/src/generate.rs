@@ -13,7 +13,6 @@ use crate::{
         Extra, ItemVis, Nest, NestedWrapper, RootWrapper, StructCommon, StructField,
         UniversalStruct, Wrapper, WrapperType,
     },
-    util::path_parse,
 };
 
 pub fn generate(derive_opts: DeriveItemOpts) -> TokenStream {
@@ -128,7 +127,7 @@ fn generate_structs(state: &State) -> TokenStream {
             extra_nest_fields.push(StructField::new(
                 ItemVis::Public,
                 nest.opts.field_name(),
-                path_parse(nest_extra_base_type.to_token_stream()),
+                nest_extra_base_type.into(),
                 nest.opts.optional(),
                 vec![],
                 nest.opts.parent_field_doc.clone(),
@@ -157,7 +156,7 @@ fn generate_structs(state: &State) -> TokenStream {
             // init nest common struct info
             let nest_common = StructCommon::new(
                 ItemVis::Public,
-                path_parse(quote!(#nest_ident)),
+                nest_ident.clone().into(),
                 nest_derives,
                 nest_attrs,
                 nest.opts.struct_doc.clone(),
@@ -194,7 +193,7 @@ fn generate_structs(state: &State) -> TokenStream {
         // init extra common struct info
         let extra_common = StructCommon::new(
             ItemVis::Public,
-            path_parse(quote!(#extra_ident)),
+            extra_ident.clone().into(),
             extra_derives,
             extra_attrs
                 .clone()
@@ -241,7 +240,7 @@ fn generate_structs(state: &State) -> TokenStream {
         // init wrapper common struct info
         let wrapper_common = StructCommon::new(
             ItemVis::Public,
-            path_parse(quote!(#wrapper_ident)),
+            wrapper_ident.clone().into(),
             wrapper_derives,
             wrapper_attrs
                 .clone()
@@ -256,7 +255,7 @@ fn generate_structs(state: &State) -> TokenStream {
             data_field: StructField::new(
                 ItemVis::Public,
                 state.wrapper_opts.data_field_name(),
-                path_parse(quote!(#origin_ident)),
+                origin_ident.clone().into(),
                 false,
                 wrapper_data_field_attrs,
                 state.wrapper_opts.data_field_doc.clone(),
@@ -264,7 +263,7 @@ fn generate_structs(state: &State) -> TokenStream {
             extra_field: StructField::new(
                 ItemVis::Public,
                 state.wrapper_opts.extra_field_name(),
-                path_parse(quote!(#extra_ident)),
+                extra_ident.clone().into(),
                 false,
                 vec![],
                 state.wrapper_opts.extra_field_doc.clone(),
