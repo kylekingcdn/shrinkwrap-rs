@@ -15,6 +15,9 @@ use crate::{
     },
 };
 
+pub(crate) mod structs;
+mod trait_impl;
+
 // !- Generate trait
 
 pub fn generate(derive_opts: DeriveItemOpts) -> TokenStream {
