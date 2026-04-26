@@ -193,9 +193,7 @@ impl NestRepo {
         });
 
         let nest_info = NestInfo::new(nest_ident.clone(), opts, transform_gen);
-        eprintln!("nest_info built: {nest_info:#?}");
-        self.nest_map
-            .insert(nest_ident, nest_info);
+        self.nest_map.insert(nest_ident, nest_info);
 
     }
 

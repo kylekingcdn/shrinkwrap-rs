@@ -277,7 +277,7 @@ pub struct WrapperOpts {
     /// </div>
     flatten: Option<Override<bool>>,
 
-    /// Field name for extra struct, defaults to data
+    /// Field name for extra struct, defaults to extra
     #[darling(default)]
     extra_field_name: Option<Ident>,
 
@@ -295,7 +295,7 @@ impl WrapperOpts {
         }
     }
     pub fn struct_name(&self, data_ident: &Ident) -> Ident {
-        format_ident!("{}{}", data_ident, self.struct_name_suffix())
+        format_ident!("{data_ident}{}", self.struct_name_suffix())
     }
     fn data_field_name_default() -> Ident {
         format_ident!("data")

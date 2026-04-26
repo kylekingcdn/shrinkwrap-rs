@@ -15,6 +15,8 @@ use crate::{
     },
 };
 
+// !- Generate trait
+
 pub fn generate(derive_opts: DeriveItemOpts) -> TokenStream {
     // destructure input opts
     let DeriveItemOpts {
@@ -120,7 +122,9 @@ fn generate_structs(state: &State) -> TokenStream {
             }
             // handle nest field in parent extra struct
             let nest_extra_base_type = match state.nest_repo.is_parent_ident(nest_ident) {
+                // use nest wrapper type as field type
                 true => state.wrapper_opts.struct_name(nest_ident),
+                // use nest type as field type
                 false => nest_ident.clone(),
             };
             // add new field to extra struct for this nest
