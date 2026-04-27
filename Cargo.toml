@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "shrinkwrap",
     "shrinkwrap-macros",
     "examples/wrap-derive",
     "examples/minimal",
