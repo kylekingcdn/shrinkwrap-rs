@@ -376,7 +376,7 @@ pub(crate) struct NestOpts {
     pub derive: PathList,
 
     /// Sets the type for the fields in the nested struct.
-    //
+    ///
     /// Cannot be used alongside `derive_to_nest` within the same nest.
     pub field_type: Option<Path>,
 

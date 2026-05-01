@@ -61,12 +61,6 @@ impl GenTransformToNest {
 
     fn trait_bounds(&self) -> TokenStream {
         let field_value_type = &self.nest_value_type;
-        // let mut field_types = Vec::new();
-        // for field in &self.nest_fields {
-        //     if !field_types.contains(&field.ty) {
-        //         field_types.push(field.ty.clone());
-        //     }
-        // }
 
         let mut tokens = TokenStream::default();
         for field_type in &self.source_field_types {

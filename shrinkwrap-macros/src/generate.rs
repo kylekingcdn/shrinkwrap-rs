@@ -54,16 +54,13 @@ pub fn generate(derive_opts: DeriveItemOpts, tokens: &mut TokenStream) {
     //             - struct attr resolver
     // build nest nest_hierarchy
     let nest_hierarchy = NestHierarchy::from_nest_opts(nest_opts);
-    // nest_hierarchy.print();
 
     // build map of nest fields
     let origin_fields = data.take_struct().expect_or_abort("couldnt get root fields").fields;
     let field_resolver = FieldResolver::from_opt_fields(origin_fields);
-    // field_resolver.print();
 
     // build struct attrs
     let struct_attr_resolver = StructAttrResolver::from_attrs(attrs.iter().collect());
-    // struct_attr_resolver.print();
 
     // init state
     let state = State::new(
