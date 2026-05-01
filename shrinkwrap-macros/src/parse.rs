@@ -113,6 +113,28 @@ impl FieldResolver {
         }
         self.origin_fields.push(field.name.clone());
     }
+    /// Checks that a parent nests' fields are a superset of the child fields
+    pub(crate) fn validate_parent_field_propagation(&self, nest_hierarchy: &NestHierarchy) -> bool {
+        let mut has_error = false;
+        for (nest_id, field_idents) in &self.nest_fields {
+            let nest_opts = nest_hierarchy.get_nest_opts(nest_id);
+            if let Some(parent_id) = &nest_opts.chain_from {
+                let parent_decl_span = parent_id.span();
+                let parent_id = parent_id.clone().into_inner();
+                let parent_fields: Vec<_> = self.nest_fields(&parent_id).into_iter().map(|field| &field.name).collect();
+
+                for nest_field in field_idents {
+                    if !parent_fields.contains(&nest_field) {
+                        emit_error!(parent_decl_span, "Parent of `{}` nest configured here.", nest_id);
+                        emit_error!(nest_field, "Parent nest `{}` does not include field `{}` required by child nest `{}`.", parent_id, nest_field, nest_id);
+                        has_error = true;
+                    }
+                }
+            }
+        }
+
+        !has_error
+    }
 
     pub(crate) fn nest_fields(&self, nest_id: &str) -> Vec<&ParsedField> {
         self.nest_fields

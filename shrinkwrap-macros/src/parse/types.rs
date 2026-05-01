@@ -384,8 +384,6 @@ pub(crate) struct NestOpts {
     /// Cannot be used alongside `field_type` within the same nest.
     pub derive_to_nest: Option<SpannedValue<DeriveToNest>>,
 
-    // FIXME: validate field is in parent!
-
     /// Optional Nest ID, allows for embedding  this nest within another nest
     pub chain_from: Option<SpannedValue<String>>,
 
