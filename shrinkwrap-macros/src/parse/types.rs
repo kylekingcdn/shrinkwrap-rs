@@ -150,8 +150,8 @@ pub(crate) struct GlobalOpts {
     /// Regardless of user settings, every generated struct will always derive
     /// the following (and therefore should not be manually included in either
     /// a shrinkwrap `derive` attr, or the `derive_all` attr)
-    /// - [`Debug`](core::fmt::Debug)
-    /// - [`Clone`](core::clone::Clone)
+    /// - [`Debug`](std::fmt::Debug)
+    /// - [`Clone`](std::clone::Clone)
     /// - [`serde::Serialize`](serde::Serialize)
     #[darling(default)]
     pub derive_all: PathList,

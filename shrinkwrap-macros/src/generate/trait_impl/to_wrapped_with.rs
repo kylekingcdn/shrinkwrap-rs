@@ -40,9 +40,6 @@ pub(crate) struct GenToWrappedWith {
     pub(crate) extra_struct_fields: Vec<GenStructField>,
 }
 impl GenToWrappedWith {
-    fn transform_nest_trait_fn(&self) -> TokenStream {
-        self.variant.fallibility.trait_fn(format_ident!("transform_to_nest"))
-    }
     fn associated_types(&self) -> TokenStream {
         let wrapper_type = &self.wrapper_ident;
         let fallibility_associated_types = self.variant.fallibility_associated_types();
@@ -104,8 +101,9 @@ impl GenToWrappedWith {
     fn gen_extra_fields_assignments(&self) -> TokenStream {
         let mut out = quote! {};
 
-        let trait_fn = self.transform_nest_trait_fn();
-        let trait_fn_call_suffix = self.variant.trait_fn_call_suffix();
+        let transform_to_nest_trait = TransformToNestVariant::from(self.variant.fallibility.clone());
+        let trait_fn = transform_to_nest_trait.trait_fn();
+        let trait_fn_call_suffix = transform_to_nest_trait.trait_fn_call_suffix();
 
         for extra_field in &self.extra_struct_fields {
             let field_name = &extra_field.name;
@@ -114,6 +112,7 @@ impl GenToWrappedWith {
                 #field_name: transform.#trait_fn(&self, options)#trait_fn_call_suffix,
             });
         }
+
         out
     }
 }

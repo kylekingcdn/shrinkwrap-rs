@@ -108,6 +108,7 @@ impl GenTransformToNest {
             };
             tokens.extend(field_tokens);
         }
+
         tokens
     }
     fn return_type(&self) -> TokenStream {
@@ -160,7 +161,6 @@ impl ToTokens for GenTransformToNest {
         };
         let return_type = self.return_type();
         let return_statement = self.return_statement(nest_definition);
-
 
         tokens.extend(quote! {
             impl #transform_generic_bounds ::shrinkwrap::#trait_name<#nest_full_type> for #transform_type
