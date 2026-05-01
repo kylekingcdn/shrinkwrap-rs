@@ -158,6 +158,7 @@ impl ToTokens for GenTransformToNest {
         let return_statement = self.return_statement(nest_definition);
 
         tokens.extend(quote! {
+            #[automatically_derived]
             impl #transform_generic_bounds ::shrinkwrap::#trait_name<#nest_full_type> for #transform_type
             where
                 #trait_bounds
