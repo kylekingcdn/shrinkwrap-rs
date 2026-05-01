@@ -1,7 +1,7 @@
 use super::*;
 
 #[derive(Debug, Clone, Default)]
-pub(crate) struct Doc(Option<Rc<str>>);
+pub(crate) struct Doc(Option<String>);
 
 impl ToTokens for Doc {
     fn to_tokens(&self, tokens: &mut TokenStream) {
@@ -10,7 +10,7 @@ impl ToTokens for Doc {
         }
     }
 }
-impl<T: Into<Rc<str>>> From<Option<T>> for Doc {
+impl<T: Into<String>> From<Option<T>> for Doc {
     fn from(value: Option<T>) -> Self {
         Self(value.map(|doc| doc.into()))
     }

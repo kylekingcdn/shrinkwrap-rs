@@ -9,42 +9,42 @@ pub struct GenTransformToDeepNest {
     pub(crate) variant: TransformToNestVariant,
 
     /// The type of the user-defined struct implementing [`shrinkwrap::Transform`]
-    pub(crate) transform_type: Rc<Path>,
+    pub(crate) transform_type: Path,
 
     /// Generic bounds for `transform_type`
-    pub(crate) transform_generic_bounds: Option<Rc<TokenStream>>,
+    pub(crate) transform_generic_bounds: Option<TokenStream>,
 
     /// Ident of the data (or nest) struct
-    pub(crate) data_ident: Rc<Ident>,
+    pub(crate) data_ident: Ident,
 
     /// Wrapper struct type for the nest.
     ///
     /// **MUST** be provided as Option<DataWrapper> for optional nests
-    pub(crate) nest_wrapper_ident: Rc<Ident>,
+    pub(crate) nest_wrapper_ident: Ident,
 
     /// Struct type for the nest.
-    pub(crate) nest_ident: Rc<Ident>,
+    pub(crate) nest_ident: Ident,
 
     /// Whether or not the destination nest is optional
     pub(crate) optional: bool,
 }
 impl GenTransformToDeepNest {
     fn nest_type(&self) -> TokenStream {
-        let nest_ident = self.nest_ident.as_ref();
+        let nest_ident = &self.nest_ident;
         match self.optional {
             true => quote! { Option<#nest_ident> },
             false => quote! { #nest_ident },
         }
     }
     fn nest_wrapper_type(&self) -> TokenStream {
-        let wrapper_ident = self.nest_wrapper_ident.as_ref();
+        let wrapper_ident = &self.nest_wrapper_ident;
         match self.optional {
             true => quote! { Option<#wrapper_ident> },
             false => quote! { #wrapper_ident },
         }
     }
     fn nest_wrapper_call_type(&self) -> TokenStream {
-        let wrapper_ident = self.nest_wrapper_ident.as_ref();
+        let wrapper_ident = &self.nest_wrapper_ident;
         match self.optional {
             true => quote! { Option::<#wrapper_ident> },
             false => quote! { #wrapper_ident },
@@ -88,7 +88,7 @@ impl ToTokens for GenTransformToDeepNest {
 
         tokens.extend(quote! {
             #[automatically_derived]
-            impl #transform_generic_bounds shrinkwrap::#trait_name<#wrapper_type> for #transform_type {
+            impl #transform_generic_bounds ::shrinkwrap::#trait_name<#wrapper_type> for #transform_type {
                 #associated_types
 
                 fn #trait_fn(

@@ -1,10 +1,9 @@
 use darling::FromDeriveInput;
 use proc_macro::TokenStream;
-use proc_macro_error2::abort;
 use syn::{DeriveInput, parse_macro_input};
 
 use crate::generate::generate;
-use crate::parse::types::{DeriveItemOpts, ValidateScoped};
+use crate::parse::types::DeriveItemOpts;
 use crate::util::expand_tokens;
 
 pub(crate) fn derive_wrap_impl(input: TokenStream) -> TokenStream {
@@ -16,14 +15,10 @@ pub(crate) fn derive_wrap_impl(input: TokenStream) -> TokenStream {
             return TokenStream::from(e.write_errors());
         }
     };
+    args.validate();
 
-    if let Some(invalidity) = &args.validate_within_scope() {
-        let errors = invalidity.join("\n\n");
-        if !errors.is_empty() {
-            abort!(args.ident.span(), format!("{errors}"));
-        }
-    }
-    let out = generate(args);
+    let mut out = proc_macro2::TokenStream::default();
+    generate(args, &mut out);
     expand_tokens(&out, "Full shrinkwrap derive");
 
     out.into()

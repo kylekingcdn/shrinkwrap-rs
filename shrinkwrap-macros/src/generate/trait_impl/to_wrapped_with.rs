@@ -1,4 +1,5 @@
 use super::*;
+// use crate::serialize::types::StructField;
 
 // !- ToWrappedWithTrait
 
@@ -21,22 +22,22 @@ pub(crate) struct GenToWrappedWith {
     pub(crate) variant: ToWrappedWithVariant,
 
     /// The type of the user-defined struct implementing [`shrinkwrap::Transform`]
-    pub(crate) transform_type: Rc<Path>,
+    pub(crate) transform_type: Path,
 
     /// Generic bounds for `transform_type`
-    pub(crate) transform_generic_bounds: Option<Rc<TokenStream>>,
+    pub(crate) transform_generic_bounds: Option<TokenStream>,
 
     /// Ident of the data (or nest) struct
-    pub(crate) data_ident: Rc<Ident>,
+    pub(crate) data_ident: Ident,
 
     /// The type of the associated wrapper struct
-    pub(crate) wrapper_ident: Rc<Ident>,
+    pub(crate) wrapper_ident: Ident,
 
     /// The type of the associated extra struct
-    pub(crate) extra_struct_ident: Rc<Ident>,
+    pub(crate) extra_struct_ident: Ident,
 
     /// Fields contained by the associated wrapper's `extra` struct
-    pub(crate) extra_struct_fields: Rc<Vec<StructField>>, // FIXME: replace with GenStructField
+    pub(crate) extra_struct_fields: Vec<GenStructField>,
 }
 impl GenToWrappedWith {
     fn transform_nest_trait_fn(&self) -> TokenStream {
@@ -70,20 +71,20 @@ impl GenToWrappedWith {
     /// Generates the `where` conditions used for the blanket impl
     fn gen_where_predicates(&self) -> TokenStream {
         // always add `shrinkwrap::Transform` bound to implementing type
-        let mut out = quote!(T: shrinkwrap::Transform,);
+        let mut out = quote!(T: ::shrinkwrap::Transform,);
 
         let data_ident = &self.data_ident;
 
-        for extra_field in self.extra_struct_fields.as_ref() {
+        for extra_field in &self.extra_struct_fields {
             // handles wrapping nest type in Option if required
-            let nest_full_type = extra_field.ty_as_option();
+            let nest_full_type = &extra_field.ty;
 
             out.extend(match &self.variant.fallibility {
                 Fallibility::Infallible => quote! {
-                    T: shrinkwrap::TransformToNest<#nest_full_type, Data = #data_ident>,
+                    T: ::shrinkwrap::TransformToNest<#nest_full_type, Data = #data_ident>,
                 },
                 Fallibility::Fallible { error_type } => quote! {
-                    T: shrinkwrap::TryTransformToNest<#nest_full_type, Data = #data_ident, Error = #error_type>,
+                    T: ::shrinkwrap::TryTransformToNest<#nest_full_type, Data = #data_ident, Error = #error_type>,
                 },
             });
         }
@@ -106,7 +107,7 @@ impl GenToWrappedWith {
         let trait_fn = self.transform_nest_trait_fn();
         let trait_fn_call_suffix = self.variant.trait_fn_call_suffix();
 
-        for extra_field in self.extra_struct_fields.as_ref() {
+        for extra_field in &self.extra_struct_fields {
             let field_name = &extra_field.name;
 
             out.extend(quote! {
@@ -140,7 +141,7 @@ impl ToTokens for GenToWrappedWith {
 
         tokens.extend(quote! {
             #[automatically_derived]
-            impl<T> shrinkwrap::#trait_name<T> for #data_ident
+            impl<T> ::shrinkwrap::#trait_name<T> for #data_ident
             where
                 #impl_bounds
             {
@@ -149,7 +150,7 @@ impl ToTokens for GenToWrappedWith {
                 fn #trait_fn(
                     self,
                     transform: &T,
-                    options: &<T as shrinkwrap::Transform>::Options,
+                    options: &<T as ::shrinkwrap::Transform>::Options,
                 ) -> #return_type {
                     #return_statement
                 }
@@ -163,13 +164,13 @@ impl ToTokens for GenToWrappedWith {
         });
         tokens.extend(quote! {
             #[automatically_derived]
-            impl #transform_generic_bounds shrinkwrap::#trait_name<#transform_type> for Option<#data_ident> {
+            impl #transform_generic_bounds ::shrinkwrap::#trait_name<#transform_type> for Option<#data_ident> {
                 #opt_helper_associated_types
 
                 fn #trait_fn(
                     self,
                     transform: &#transform_type,
-                    options: &<#transform_type as shrinkwrap::Transform>::Options,
+                    options: &<#transform_type as ::shrinkwrap::Transform>::Options,
                 ) -> #return_type {
                     #opt_helper_return_statement
                 }

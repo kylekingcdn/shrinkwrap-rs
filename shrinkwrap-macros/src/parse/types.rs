@@ -1,32 +1,21 @@
 #![doc = "Types used for deserializing attributes (via Darling)"]
 
-use std::collections::HashSet;
 
 use darling::ast::Data;
 use darling::util::{Flag, Override, PathList, SpannedValue};
 use darling::{FromDeriveInput, FromField, FromMeta};
-use heck::{AsUpperCamelCase, AsSnakeCase};
-use proc_macro_error2::OptionExt;
+use heck::AsUpperCamelCase;
+use proc_macro_error2::{OptionExt, abort, emit_error};
 use proc_macro2::{Span, TokenStream};
-use quote::{ToTokens, format_ident, quote};
-use syn::{Attribute, Ident, LitStr, Meta, Path};
+use quote::format_ident;
+use std::collections::HashSet;
+use syn::{Attribute, Ident, LitStr, Meta, Path, Type, parse_quote, spanned::Spanned};
 
-use crate::mapping::types::NestRepo;
+// !- Statics & Consts
 
-// - validate trait
+static FORWARD_ATTR: &str = "shrinkwrap_attr";
 
-pub(crate) type InvalidityReason = String;
-pub(crate) type HasInvalidity = Option<Vec<InvalidityReason>>;
-
-/// Performs baseline validation of local fields.
-///
-/// Should not perform higher-level validation with other types
-pub(crate) trait ValidateScoped {
-    fn validate_within_scope(&self) -> HasInvalidity {
-        None
-    }
-}
-// - primary darling types
+// !- Derive entrypoint
 
 /// Root derive options
 #[derive(Debug, Clone, FromDeriveInput)]
@@ -47,36 +36,83 @@ pub(crate) struct DeriveItemOpts {
     pub extra_opts: ExtraOpts,
 
     #[darling(default, rename = "nest", multiple)]
-    pub nest_opts: Vec<NestOpts>,
+    pub nest_opts: Vec<SpannedValue<NestOpts>>,
 
     #[darling(flatten)]
     pub global_opts: GlobalOpts,
 }
-impl ValidateScoped for DeriveItemOpts {
-    fn validate_within_scope(&self) -> HasInvalidity {
-        let mut issues = Vec::new();
-        if let Some(new_issues) = self.wrapper_opts.validate_within_scope() {
-            issues.extend(new_issues);
+impl DeriveItemOpts {
+    pub(crate) fn validate(&self) -> bool {
+        let wrapper_errors = self.wrapper_opts.validate();
+        let extra_errors = self.extra_opts.validate();
+
+        let mut nest_errors = 0;
+        for nest in &self.nest_opts {
+            nest_errors += nest.validate(nest.span());
         }
-        if let Some(new_issues) = self.extra_opts.validate_within_scope() {
-            issues.extend(new_issues);
+
+        let self_errors = self.validate_self();
+        let total_errors = wrapper_errors + extra_errors + nest_errors + self_errors;
+
+        total_errors == 0
+    }
+    fn validate_self(&self) -> usize {
+        let mut errors = 0;
+
+        let all_nest_ids = self.nest_opts.iter().map(|nest| nest.id_str().to_string()).collect::<Vec<_>>();
+        // validate field nest id's exist
+        if let Data::Struct(data) = &self.data {
+            for field in &data.fields {
+                for nest in &field.nests {
+                    if !all_nest_ids.contains(&nest.value()) {
+                        emit_error!(nest, "Nest `{}` is not defined", nest.value());
+                        errors += 1;
+                    }
+                }
+            }
+        } else {
+            emit_error!(Span::call_site(), "Only named structs are supported");
+            errors += 1;
         }
-        for nest_group in &self.nest_opts {
-            if let Some(nest_issues) = nest_group.validate_within_scope() {
-                issues.extend(nest_issues);
+
+        // validate for conflicting optional/derive to nest option_field
+        let all_optional = self.global_opts.all_optional.is_present();
+        for nest in &self.nest_opts {
+            let nest_optional = all_optional || nest.optional();
+            // nest not optional, option_field set
+            if let Some(derive_to_nest) = &nest.derive_to_nest && let Some(option_field) = &derive_to_nest.options_field {
+                if !nest_optional {
+                    emit_error!(option_field, "options_field can only be used for optional nests");
+                }
+                errors += 1;
             }
         }
 
-        if issues.is_empty() {
-            None
-        } else {
-            issues.into()
-        }
+        errors
     }
 }
 
+// !- Struct field entrypoint
+
+/// Options for struct field attributes
+#[derive(Debug, Clone, FromField)]
+#[darling(attributes(shrinkwrap), forward_attrs(shrinkwrap_attr))]
+pub(crate) struct DeriveItemFieldOpts {
+    /// only None for tuple fields, therefore safe to unwrap
+    pub ident: Option<Ident>,
+    pub ty: Type,
+    pub attrs: Vec<Attribute>,
+
+    #[darling(default)]
+    pub nests: NestIdSelection,
+}
+
+// !- Container option structs
+
+// !- Global
+
 #[derive(Debug, Clone, FromMeta)]
-pub struct GlobalOpts {
+pub(crate) struct GlobalOpts {
     /// Path of transform type used for this nest group
     pub transform: Path,
 
@@ -92,13 +128,15 @@ pub struct GlobalOpts {
     /// structs
     schema: Flag,
 
-    /// Implies `schema`, add #[schemars(inline)] to all generated structs,
-    /// Adds a schemars rename on the primary wrapper to the origin data struct
-    /// name.
+    /// Implies `schema` flag.
+    ///
+    /// Adds `#[schemars(inline)]` to all generated structs, enforces flatten on
+    /// wrapper structs, adds `#[serde(rename = {OriginStructName})]` on the
+    /// primary wrapper (which also implies `schemars(rename)`).
     inline: Flag,
 
     /// Equivalent to setting `optional` on all nests.
-    all_optional: Flag,
+    pub all_optional: Flag,
 
     /// List of derives to apply to every generated struct: e.g. each wrapper,
     /// extra, nest.
@@ -116,12 +154,11 @@ pub struct GlobalOpts {
     /// - [`Clone`](core::clone::Clone)
     /// - [`serde::Serialize`](serde::Serialize)
     #[darling(default)]
-    derive_all: PathList,
+    pub derive_all: PathList,
 }
-#[allow(dead_code)]
 impl GlobalOpts {
     pub fn schema(&self) -> bool {
-        self.schema.is_present()
+        self.schema.is_present() || self.inline.is_present()
     }
     pub fn inline(&self) -> bool {
         self.inline.is_present()
@@ -136,84 +173,16 @@ impl GlobalOpts {
 
 /// Options for struct nest attribute
 #[derive(Debug, Clone, FromMeta)]
-pub struct GlobalFallibleNestedOpts {
+pub(crate) struct GlobalFallibleNestedOpts {
     /// Error type used for Result returned by trait impls
     pub error: Path,
 }
 
-pub struct State {
-    pub nest_repo: NestRepo,
-
-    pub global: GlobalOpts,
-    pub wrapper_opts: WrapperOpts,
-    pub extra_opts: ExtraOpts,
-
-    pub root_ident: Ident,
-}
-impl State {
-    pub fn new(
-        global: GlobalOpts,
-        wrapper: WrapperOpts,
-        extra: ExtraOpts,
-        root_ident: Ident,
-    ) -> Self {
-        Self {
-            nest_repo: NestRepo::new(root_ident.clone(), global.all_optional),
-
-            global,
-            wrapper_opts: wrapper,
-            extra_opts: extra,
-
-            root_ident,
-        }
-    }
-    fn base_derives() -> Vec<TokenStream> {
-        [
-            quote!(core::fmt::Debug),
-            quote!(core::clone::Clone),
-            quote!(serde::Serialize),
-        ]
-        .into()
-    }
-    pub fn default_derives(&self) -> Vec<TokenStream> {
-        let mut derives = Self::base_derives();
-
-        // add derives defined in global opts
-        if !self.global.derive_all.is_empty() {
-            let global_derive_tokens: Vec<TokenStream> = self
-                .global
-                .derive_all
-                .iter()
-                .map(|d| d.to_token_stream())
-                .collect();
-            derives.extend(global_derive_tokens);
-        }
-
-        // derive `JsonSchema` if either schema or inline attribute flags are set
-        if self.global.schema.is_present() || self.global.inline.is_present() {
-            derives.push(quote!(schemars::JsonSchema));
-        }
-
-        derives
-    }
-}
-
-/// Options for struct field attributes
-#[derive(Debug, Clone, FromField)]
-#[darling(attributes(shrinkwrap), forward_attrs(shrinkwrap_attr))]
-pub struct DeriveItemFieldOpts {
-    /// only None for tuple fields, therefore safe to unwrap
-    pub ident: Option<Ident>,
-    pub attrs: Vec<Attribute>,
-
-    #[darling(default)]
-    pub nests: NestIdSelection,
-}
-impl ValidateScoped for DeriveItemFieldOpts {}
+// ! Wrapper
 
 /// Options for struct wrapper attribute
-#[derive(Debug, Clone, Default, FromMeta)]
-pub struct WrapperOpts {
+#[derive(Debug, Clone, FromMeta)]
+pub(crate) struct WrapperOpts {
     /// Set the struct name suffix used by all associated wrappers (primary +
     /// any nested wrappers).
     ///
@@ -221,8 +190,8 @@ pub struct WrapperOpts {
     ///
     /// E.g. For a data struct named: `MyData`, the default corresponding
     /// wrapper struct would be `MyDataWrapper`
-    #[darling(default)]
-    struct_suffix: Option<Ident>,
+    #[darling(default = WrapperOpts::struct_name_suffix_default)]
+    pub struct_suffix: Ident,
 
     /// Derives to apply to the wrapper struct
     #[darling(default)]
@@ -232,8 +201,8 @@ pub struct WrapperOpts {
     pub struct_doc: Option<String>,
 
     /// Field name for data struct, defaults to data
-    #[darling(default)]
-    data_field_name: Option<Ident>,
+    #[darling(default = WrapperOpts::data_field_name_default)]
+    pub data_field_name: Ident,
 
     /// Sets field-level documentation for data field
     pub data_field_doc: Option<String>,
@@ -278,33 +247,35 @@ pub struct WrapperOpts {
     flatten: Option<Override<bool>>,
 
     /// Field name for extra struct, defaults to extra
-    #[darling(default)]
-    extra_field_name: Option<Ident>,
+    #[darling(default = WrapperOpts::extra_field_name_default)]
+    pub extra_field_name: Ident,
 
     /// Sets field-level documentation for extra field
     pub extra_field_doc: Option<String>,
+}
+impl Default for WrapperOpts {
+    fn default() -> Self {
+        Self {
+            struct_suffix: Self::struct_name_suffix_default(),
+            derive: PathList::default(),
+            struct_doc: None,
+            data_field_name: Self::data_field_name_default(),
+            data_field_doc: None,
+            flatten: None,
+            extra_field_name: Self::extra_field_name_default(),
+            extra_field_doc: None,
+        }
+    }
 }
 impl WrapperOpts {
     fn struct_name_suffix_default() -> Ident {
         format_ident!("Wrapper")
     }
-    pub fn struct_name_suffix(&self) -> Ident {
-        match &self.struct_suffix {
-            Some(suffix) => suffix.clone(),
-            None => Self::struct_name_suffix_default(),
-        }
-    }
     pub fn struct_name(&self, data_ident: &Ident) -> Ident {
-        format_ident!("{data_ident}{}", self.struct_name_suffix())
+        format_ident!("{data_ident}{}", &self.struct_suffix)
     }
     fn data_field_name_default() -> Ident {
         format_ident!("data")
-    }
-    pub fn data_field_name(&self) -> Ident {
-        match &self.data_field_name {
-            Some(name) => name.clone(),
-            None => Self::data_field_name_default(),
-        }
     }
     pub fn flatten(&self) -> bool {
         match self.flatten {
@@ -315,24 +286,33 @@ impl WrapperOpts {
     fn extra_field_name_default() -> Ident {
         format_ident!("extra")
     }
-    pub fn extra_field_name(&self) -> Ident {
-        match &self.extra_field_name {
-            Some(name) => name.clone(),
-            None => Self::extra_field_name_default(),
+
+    fn validate(&self) -> usize {
+        let mut errs = 0;
+        if self.data_field_name == self.extra_field_name {
+            let invalid_token = if self.data_field_name == Self::data_field_name_default() {
+                &self.extra_field_name
+            } else {
+                &self.data_field_name
+            };
+            emit_error!(invalid_token, "data_field_name must be different than extra_field_name");
+            errs += 1;
         }
+        errs
     }
 }
-impl ValidateScoped for WrapperOpts {}
+
+// ! Extra
 
 /// Options for struct extra attribute
-#[derive(Debug, Clone, Default, FromMeta)]
-pub struct ExtraOpts {
+#[derive(Debug, Clone, FromMeta)]
+pub(crate) struct ExtraOpts {
     /// Set the `extra` struct name suffix - defaults to `Extra`
     ///
     /// E.g. For a data struct named: `MyData`,
     /// the default corresponding extra struct would be `MyDataExtra`
-    #[darling(default)]
-    struct_suffix: Option<Ident>,
+    #[darling(default = ExtraOpts::struct_name_suffix_default)]
+    pub struct_suffix: Ident,
 
     /// Derives to apply to the extra struct.
     /// Debug, Clone, and `serde::Serialize` are required and auto-derived
@@ -342,70 +322,75 @@ pub struct ExtraOpts {
     /// Sets struct-level documentation for all generated Extra structs
     pub struct_doc: Option<String>,
 }
+impl Default for ExtraOpts {
+    fn default() -> Self {
+        Self {
+            struct_suffix: Self::struct_name_suffix_default(),
+            derive: PathList::default(),
+            struct_doc: None,
+        }
+    }
+}
 impl ExtraOpts {
     fn struct_name_suffix_default() -> Ident {
         format_ident!("Extra")
     }
-    pub fn struct_name_suffix(&self) -> Ident {
-        match &self.struct_suffix {
-            Some(suffix) => suffix.clone(),
-            None => Self::struct_name_suffix_default(),
-        }
-    }
     pub fn struct_name(&self, parent_data_ident: &Ident) -> Ident {
-        format_ident!("{}{}", parent_data_ident, self.struct_name_suffix())
+        format_ident!("{parent_data_ident}{}", &self.struct_suffix)
+    }
+
+    fn validate(&self) -> usize {
+        let mut errs = 0;
+        if self.struct_suffix.to_string().is_empty() {
+            emit_error!(self.struct_suffix, "struct_suffix cannot be empty");
+            errs += 1;
+        }
+        errs
     }
 }
-impl ValidateScoped for ExtraOpts {}
 
-/// Options for struct nest attribute
-#[derive(Debug, Clone, FromMeta)]
-pub struct DeeplyNestedOpts {
-    // #[darling(with=Self::parse_origin)]
-    pub origin: Ident,
-}
+// ! Nest
 
 #[derive(Debug, Clone, FromMeta)]
-pub struct NestOpts {
+pub(crate) struct NestOpts {
     /// used for specifying/identifying a nest from an attribute.
     /// Must be unique among all nests under a given Data struct
     pub id: SpannedValue<String>,
 
-    /// used for the nest field name under `data.extra`.
-    /// This should typically be identical and must be
-    /// unique among the other sibling nests.
+    /// Used for the nest field name under `data.extra`.
+    /// Must be unique among the other sibling nests.
+    ///
     /// Typically this should only be used when implementing
-    /// nested data hierarchies via [`origin`](Self::origin)
+    /// nested data hierarchies via [`chain_from`](Self::chain_fron)
     ///
     /// Defaults to `self.id`
-    field_name: Option<Ident>,
+    pub field_name: Option<Ident>,
 
     /// sets the name of the nests' generated struct - defaults to
-    /// `{DataStructName}{UpperCamel(field_name ? field_name : id)}`
-    rename: Option<Ident>,
+    /// `{SourceStructName}Nested{UpperCamel(field_name || "{self.id}")}`
+    pub rename: Option<Ident>,
 
     /// Derives to apply to the nest struct - `Debug`, `Clone`, and
-    /// `serde::Serialize` are required and auto-derived
+    /// `serde::Serialize` are required and auto-derived.
     #[darling(default)]
     pub derive: PathList,
 
     /// Sets the type for the fields in the nested struct.
-    /// Cannot be used alongside `derive_transform` within the same nest.
+    //
+    /// Cannot be used alongside `derive_to_nest` within the same nest.
     pub field_type: Option<Path>,
 
     /// Derive `TransformToNest`/`TryTransformToNest` automatically.
     /// Cannot be used alongside `field_type` within the same nest.
-    pub derive_transform: Option<SpannedValue<DeriveNestTransformOpts>>,
+    pub derive_to_nest: Option<SpannedValue<DeriveToNest>>,
 
-    /// Embed this nest within another nest
-    pub nested: Option<DeeplyNestedOpts>,
+    // FIXME: validate field is in parent!
+
+    /// Optional Nest ID, allows for embedding  this nest within another nest
+    pub chain_from: Option<SpannedValue<String>>,
 
     /// Sets the struct-level documentation for the generated Nest struct
     pub struct_doc: Option<String>,
-
-    /// Sets the documentation of any fields that refer to this type
-    /// (e.g. in `Extra` structs)
-    pub parent_field_doc: Option<String>,
 
     /// The parent extra struct will type the field for this nest with
     /// `Option<T>`, e.g, the generated extra struct would look like
@@ -417,6 +402,9 @@ pub struct NestOpts {
     pub optional: Flag,
 }
 impl NestOpts {
+    pub fn id_str(&self) -> &str {
+        self.id.as_str()
+    }
     fn field_name_default(&self) -> Ident {
         format_ident!("{}", self.id.as_ref())
     }
@@ -426,91 +414,100 @@ impl NestOpts {
             None => self.field_name_default(),
         }
     }
-    pub fn build_struct_name_suffix(field_name: &Ident) -> Ident {
-        let suffix = AsUpperCamelCase(field_name.to_string());
-        format_ident!("{suffix}")
+    pub fn is_root_nest(&self) -> bool {
+        self.chain_from.is_none()
     }
+
+    /// `origin_ident`: The ident of the source data struct (origin struct
+    /// for root nests, parent nest for deeply nested)
     pub fn build_default_struct_name(
         origin_ident: &Ident,
-        root_ident: &Ident,
         field_name: &Ident,
+        is_root_nest: bool,
     ) -> Ident {
         // To avoid obnoxiously long struct names, only include the nested
-        // keyword once (root nests)
-        let region_descriptor = if origin_ident == root_ident {
+        // keyword once (for root nests only).
+        // Any deeply nested structs will evaluate to:
+        //   {Root}Nested{each level's nest name concat'd}
+        let region_descriptor = if is_root_nest {
             "Nested"
         } else {
-            Default::default()
+            ""
         };
-        let suffix = Self::build_struct_name_suffix(field_name);
+        let suffix = AsUpperCamelCase(field_name.to_string());
 
-        format_ident!("{}{region_descriptor}{}", origin_ident, suffix)
+        format_ident!("{origin_ident}{region_descriptor}{suffix}")
     }
-    /// `root_ident` is the ident of the top-level data struct containing derive(Wrap).
-    /// It is used to form the base struct name when an origin isn't explicitly provided
-    pub fn struct_name_default(&self, root_ident: &Ident) -> Ident {
-        let origin_ident = self.origin(root_ident);
+    /// `origin_ident` is the ident of the source data struct that this nest receives data from.
+    /// It is used to form the base struct name isn't explicitly provided
+    pub fn struct_name_default(&self, origin_ident: &Ident) -> Ident {
+        // let origin_ident = self.origin(root_ident);
         let field_name = self.field_name();
-        Self::build_default_struct_name(origin_ident, root_ident, &field_name)
+        Self::build_default_struct_name(origin_ident, &field_name, self.is_root_nest())
     }
     /// `root_ident` is the ident of the top-level data struct containing derive(Wrap).
     /// It is used to form the base struct name when an origin isn't explicitly provided
-    pub fn struct_name(&self, root_ident: &Ident) -> Ident {
+    pub fn struct_name(&self, origin_ident: &Ident) -> Ident {
         match &self.rename {
             Some(name) => name.clone(),
-            None => self.struct_name_default(root_ident),
-        }
-    }
-    pub fn struct_name_span(&self) -> Span {
-        if let Some(rename) = &self.rename {
-            rename.span()
-        } else if let Some(field_name) = &self.field_name {
-            field_name.span()
-        } else {
-            self.id.span()
+            None => self.struct_name_default(origin_ident),
         }
     }
     pub fn optional(&self) -> bool {
         self.optional.is_present()
     }
-    pub fn origin<'a>(&'a self, root_ident: &'a Ident) -> &'a Ident {
-        match &self.nested {
-            Some(nested_opts) => &nested_opts.origin,
-            None => root_ident,
-        }
+
+    pub fn derive_to_nest_options_field_name(&self) -> Option<Ident> {
+        self.derive_to_nest.as_ref().map(|derive_to_nest| {
+            let field_name = self.field_name();
+            derive_to_nest.options_field_name_or_default(&field_name)
+        })
     }
+
     // scoped validation should have been done prior to any access, allow expect here
     pub fn resolve_field_type(&self) -> &Path {
         if let Some(field_type) = self.field_type.as_ref() {
             field_type
         } else {
-            &self.derive_transform
+            &self.derive_to_nest
                 .as_ref()
-                .expect("Validated field_type XOR derive_transform(value)")
+                .expect_or_abort("Validated field_type XOR derive_transform(value)")
                 .value
         }
     }
-}
-impl ValidateScoped for NestOpts {
-    fn validate_within_scope(&self) -> HasInvalidity {
-        let mut issues = Vec::new();
-        if self.id.is_empty() {
-            issues.push("Nest `id` cannot be empty".into());
-        }
-        // validation of `optional` XNOR `options_field` is done out of
-        // type scope to allow for handling of global all_optional opt
 
-        if issues.is_empty() {
-            None
-        } else {
-            issues.into()
+    fn validate(&self, nest_span: Span) -> usize {
+        let mut errs = 0;
+
+        if self.id.is_empty() {
+            // emit_error!(self.id, "Nest ID cannot be empty");
+            // emit_error!(self.id.to_token_stream(), "Nest ID cannot be empty");
+            emit_error!(self.id.span(), "Nest ID cannot be empty");
+            errs += 1;
         }
+        if let Some(chain_from) = &self.chain_from && chain_from.as_str() == self.id.as_str() {
+            emit_error!(chain_from.span(), "Nest cannot be chained from itself");
+            errs += 1;
+        }
+        if let Some(field_type) = &self.field_type && let Some(derive_to_nest) = &self.derive_to_nest {
+            emit_error!(derive_to_nest.span(), "`derive_to_nest` defined here");
+            emit_error!(field_type, "`field_type` cannot be used with `derive_to_nest`");
+            errs += 1;
+        }
+        if self.field_type.is_none() && self.derive_to_nest.is_none() {
+            emit_error!(nest_span, "Either `field_type` or `derive_to_nest` must be configured");
+            errs += 1;
+        }
+
+        errs
     }
 }
 
+// ! Nest auto-transform
+
 /// Configuration for automatically deriving `TransformToNest`/`TryTransformToNest`.
 #[derive(Debug, Clone, FromMeta)]
-pub struct DeriveNestTransformOpts {
+pub struct DeriveToNest {
     /// Sets the user-defined type representing this nest variation.
     /// This type can be reused in other `shrinkwrap::Wrap` impl'd structs
     /// (typically 1 Nest type impl per unique nest ID).
@@ -527,7 +524,7 @@ pub struct DeriveNestTransformOpts {
     /// Type must implement `NestValueType`.
     pub value: Path,
 
-    /// Only compatible with `optional` nests. Defaults to `"with_"` + `value`
+    /// Only compatible with `optional` nests. Defaults to `"with_"` + nest `field_name`
     /// attr (as `snake_case`) if unset and nest is optional.
     ///
     /// Allows implementor to retain control of conditional nest rendering when
@@ -538,101 +535,36 @@ pub struct DeriveNestTransformOpts {
     /// The derived transform impl will skip rendering if this field if set to `false`.
     pub options_field: Option<Ident>,
 }
-impl DeriveNestTransformOpts {
-    pub fn value_path_basename(&self) -> Result<Ident, darling::Error> {
-        match self.value.segments.last().cloned() {
-            Some(path_ident) => {
-                Ok(path_ident.ident)
-            },
-            None => {
-                Err(darling::Error::custom(
-                    format_ident!("Invalid derive_transform `value` path")
-                ).with_span(&self.value))
-            }
-        }
-    }
-    pub fn options_field_name_or_default(&self) -> Ident {
+impl DeriveToNest {
+    pub fn options_field_name_or_default(&self, field_name: &Ident) -> Ident {
         if let Some(options_name) = self.options_field.clone() {
             options_name
         } else {
-            self.options_field_name_default()
+            self.options_field_name_default(field_name)
         }
     }
-    fn options_field_name_default(&self) -> Ident {
-        let value_type_name = self
-            .value_path_basename()
-            .ok()
-            .expect_or_abort("Failed to generate options field name from value type");
-        let suffix = AsSnakeCase(value_type_name.to_string());
-        format_ident!("with_{suffix}")
-    }
-}
-impl ValidateScoped for DeriveNestTransformOpts {
-
-}
-
-// - helper types
-
-pub type NestIdSelection = Vec<LitStr>;
-
-// attribute passthrough opts for structs
-#[derive(Debug, Clone, FromMeta)]
-pub struct PassthroughStructAttribute {
-    pub attr: Meta,
-
-    #[darling(default)]
-    pub limit: DerivedStructRestriction,
-}
-impl From<PassthroughFieldAttribute> for PassthroughStructAttribute {
-    fn from(field_attr: PassthroughFieldAttribute) -> Self {
-        Self {
-            attr: field_attr.attr,
-            limit: field_attr.limit.into(),
-        }
+    fn options_field_name_default(&self, field_name: &Ident) -> Ident {
+        format_ident!("with_{field_name}")
     }
 }
 
-#[derive(Debug, Clone, Default, FromMeta)]
-pub struct DerivedStructRestriction {
-    // list of nest IDs
-    pub nests: Option<NestIdSelection>,
+// !- Helper types
 
-    #[darling(default, with=DerivedStructClassSelection::parse_input)]
-    pub class: Option<DerivedStructClassSelection>,
-}
-impl From<DerivedStructFieldRestriction> for DerivedStructRestriction {
-    fn from(field_restrict: DerivedStructFieldRestriction) -> Self {
-        Self {
-            nests: field_restrict.nests,
-            class: None,
-        }
-    }
-}
+// !- Filter for nest IDs
 
-// attribute passthrough opts for fields
+/// Nest id list alias for darling/syn from derive
+pub(crate) type NestIdSelection = Vec<LitStr>;
 
-#[derive(Debug, Clone, FromMeta)]
-pub struct PassthroughFieldAttribute {
-    pub attr: Meta,
-
-    #[darling(default)]
-    pub limit: DerivedStructFieldRestriction,
-}
-
-#[derive(Debug, Clone, Default, FromMeta)]
-pub struct DerivedStructFieldRestriction {
-    // list of nest IDs
-    pub nests: Option<NestIdSelection>,
-}
+// ! Filter for type of derived struct
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub enum DerivedStructClass {
+pub(crate) enum StructClass {
     Wrapper,
     Nest,
     Extra,
 }
-impl DerivedStructClass {
-    pub fn key(&self) -> String {
+impl StructClass {
+    pub(crate) fn key(&self) -> String {
         match self {
             Self::Wrapper => "wrapper",
             Self::Nest => "nest",
@@ -641,7 +573,7 @@ impl DerivedStructClass {
         .into()
     }
 }
-impl TryFrom<&syn::Path> for DerivedStructClass {
+impl TryFrom<&syn::Path> for StructClass {
     type Error = darling::Error;
 
     fn try_from(value: &syn::Path) -> Result<Self, Self::Error> {
@@ -664,33 +596,35 @@ impl TryFrom<&syn::Path> for DerivedStructClass {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DerivedStructClassSelection(HashSet<DerivedStructClass>);
-impl Default for DerivedStructClassSelection {
+pub(crate) struct StructClassSelection(HashSet<StructClass>);
+
+impl Default for StructClassSelection {
     fn default() -> Self {
         let mut set = HashSet::new();
-        set.insert(DerivedStructClass::Wrapper);
-        set.insert(DerivedStructClass::Extra);
-        set.insert(DerivedStructClass::Nest);
+        set.insert(StructClass::Wrapper);
+        set.insert(StructClass::Extra);
+        set.insert(StructClass::Nest);
         Self(set)
     }
 }
 
-impl DerivedStructClassSelection {
-    pub fn contains(&self, class: DerivedStructClass) -> bool {
+impl StructClassSelection {
+    pub(crate) fn contains(&self, class: StructClass) -> bool {
         self.0.contains(&class)
     }
-    pub fn parse_input(meta: &syn::Meta) -> darling::Result<Option<Self>> {
+    pub(crate) fn parse_input(meta: &syn::Meta) -> darling::Result<Option<SpannedValue<Self>>> {
         let pathlist = PathList::from_meta(meta)?;
-        Self::try_from(pathlist).map(Some)
+        let span = meta.span();
+        Self::try_from(pathlist).map(|selection| Some(SpannedValue::new(selection, span)))
     }
 }
-impl TryFrom<PathList> for DerivedStructClassSelection {
+impl TryFrom<PathList> for StructClassSelection {
     type Error = darling::Error;
 
     fn try_from(paths: PathList) -> Result<Self, Self::Error> {
         let mut set = HashSet::new();
         for path in paths.iter() {
-            let class_type = DerivedStructClass::try_from(path)?;
+            let class_type = StructClass::try_from(path)?;
             if set.contains(&class_type) {
                 let msg = format!("Class type defined multiple times: {}", class_type.key());
                 return Err(darling::Error::custom(&msg).with_span(&path));
@@ -698,5 +632,210 @@ impl TryFrom<PathList> for DerivedStructClassSelection {
             set.insert(class_type);
         }
         Ok(Self(set))
+    }
+}
+
+// !- Attribute passthrough
+
+/// Receives tokens in the form of `attr(serde(rename_all="snake_case"))`
+fn extract_passthrough_attr_meta(meta: &Meta) -> Attribute {
+    match meta.require_list() {
+        Ok(list) => {
+            if let Ok(path) = list.path.require_ident() && path == "attr" {
+                let inner_attr = &list.tokens;
+                parse_quote!(#[#inner_attr])
+            } else {
+                abort!(
+                    list.path.span(),
+                    format!(
+                        "Unexpected key for passthrough attributes `attr` group. Expected `attr`"
+                    )
+                )
+            }
+        },
+        Err(error) => {
+            abort!(
+                meta.span(),
+                format!(
+                    "Unexpected attr meta type. Expected a list `(that,looks,like,this).\nOriginal error: {error}`"
+                )
+            );
+        }
+    }
+}
+
+// !- Struct attributes
+
+/// attribute passthrough opts for structs
+#[derive(Debug, Clone, FromMeta)]
+pub(crate) struct StructProxyAttribute {
+    pub attr: Meta,
+
+    #[darling(default)]
+    pub limit: StructRestriction,
+}
+impl StructProxyAttribute {
+    pub(crate) fn maybe_from_attribute(attr: &Attribute) -> Option<Self> {
+        let forward_ident = format_ident!("{FORWARD_ATTR}");
+        if attr.path().get_ident() == Some(&forward_ident) {
+            let proxy_attr = match Self::from_meta(&attr.meta) {
+                Ok(proxy) => proxy,
+                Err(error) => abort!(error.span(), error),
+            };
+            let limit = &proxy_attr.limit;
+            if limit.origin.is_present() && let Some(nests) = &limit.nests {
+                emit_error!(nests.span(), "Conflicting `nests` attribute defined here");
+                abort!(limit.origin.span(), "`nests` and `origin` cannot be set simultaneously");
+            }
+            if limit.origin.is_present() && let Some(class) = &limit.class && class.contains(StructClass::Nest) {
+                emit_error!(class.span(), "Conflicting `class` attribute defined here. Option 1) remove `nest` from `class` list.");
+                abort!(limit.origin.span(), "`class(nest)` and `origin` cannot be set simultaneously. Option 2) remove the `origin` flag.");
+            }
+
+            Some(proxy_attr)
+        } else {
+            None
+        }
+    }
+    pub(crate) fn maybe_extract_from(attr: &Attribute) -> Option<ExtractedStructAttribute> {
+        Self::maybe_from_attribute(attr).map(ExtractedStructAttribute::from)
+    }
+}
+
+/// Filter derived struct selection by nests/origin and/or struct type (wrapper, nest, extra)
+#[derive(Debug, Clone, Default, FromMeta)]
+pub(crate) struct StructRestriction {
+    /// List of nest IDs to restrict assignment to.
+    ///
+    /// Incompatible with `origin` flag.
+    pub nests: Option<SpannedValue<NestIdSelection>>,
+
+    /// Restrict assignment to the structs generated for the primary/derive struct (wrapper/extra).
+    ///
+    /// If the `class` restriction list is provided, it cannot contain `nest`.
+    pub origin: Flag,
+
+    /// Type of generated structs to restrict assignment to.
+    ///
+    /// If the `origin` restriction flag is provided, `class` cannot contain `nest`
+    #[darling(default, with=StructClassSelection::parse_input)]
+    pub class: Option<SpannedValue<StructClassSelection>>,
+}
+
+// restriction by nest ids or origin flag
+#[derive(Debug, Clone)]
+pub(crate) enum StructAttributeOriginRestriction {
+    Origin,
+    Nests(HashSet<String>),
+}
+
+// TODO: custom debug impl - relocate to StructAttrResolver?
+#[derive(Debug, Clone)]
+pub(crate) struct ExtractedStructAttribute {
+    pub attr: Attribute,
+
+    // pub nests: Option<HashSet<String>>,
+    pub sources: Option<StructAttributeOriginRestriction>,
+
+    pub classes: StructClassSelection,
+}
+impl ExtractedStructAttribute {
+    pub(crate) fn get_origin_attrs(&self, class: StructClass) -> Option<&Attribute> {
+        if !self.classes.contains(class) {
+            None
+        } else {
+            match &self.sources {
+                None | Some(StructAttributeOriginRestriction::Origin) => Some(&self.attr),
+                Some(StructAttributeOriginRestriction::Nests(..)) => None,
+            }
+        }
+    }
+    pub(crate) fn get_nest_attrs(&self, class: StructClass, nest_id: &str) -> Option<&Attribute> {
+        if !self.classes.contains(class) {
+            None
+        } else {
+            match &self.sources {
+                None => Some(&self.attr),
+                Some(StructAttributeOriginRestriction::Nests(nest_ids)) => nest_ids.contains(nest_id).then_some(&self.attr),
+                Some(StructAttributeOriginRestriction::Origin) => None,
+            }
+        }
+    }
+}
+impl From<StructProxyAttribute> for ExtractedStructAttribute {
+    fn from(proxy_attr: StructProxyAttribute) -> Self {
+        let limit = proxy_attr.limit;
+        let sources = if let Some(ids) = limit.nests {
+            let nest_ids = ids.into_inner().into_iter().map(|id| id.value()).collect();
+            Some(StructAttributeOriginRestriction::Nests(nest_ids))
+        } else if limit.origin.is_present() {
+            Some(StructAttributeOriginRestriction::Origin)
+        } else {
+            None
+        };
+
+        Self {
+            attr: extract_passthrough_attr_meta(&proxy_attr.attr),
+            sources,
+            classes: limit.class.unwrap_or_default().into_inner(),
+        }
+    }
+}
+
+// ! Field attributes
+
+#[derive(Debug, Clone, FromMeta)]
+pub(crate) struct FieldProxyAttribute {
+    pub attr: Meta,
+
+    #[darling(default)]
+    pub limit: SpannedValue<FieldAttrRestriction>,
+}
+impl FieldProxyAttribute {
+    pub(crate) fn maybe_from_attribute(attr: &Attribute) -> Option<Self> {
+        let forward_ident = format_ident!("{FORWARD_ATTR}");
+
+        if attr.path().get_ident() == Some(&forward_ident) {
+             match Self::from_meta(&attr.meta) {
+                Ok(proxy) => Some(proxy),
+                Err(error) => abort!(error.span(), error),
+            }
+        } else {
+            None
+        }
+    }
+    pub(crate) fn maybe_extract_from(attr: &Attribute) -> Option<ExtractedFieldAttribute> {
+        Self::maybe_from_attribute(attr).map(ExtractedFieldAttribute::from)
+    }
+}
+
+#[derive(Debug, Clone, Default, FromMeta)]
+pub(crate) struct FieldAttrRestriction {
+    /// list of nest IDs
+    pub nests: Option<NestIdSelection>,
+}
+
+// TODO: custom debug impl
+#[derive(Debug, Clone)]
+pub(crate) struct ExtractedFieldAttribute {
+    pub attr: Attribute,
+
+    pub nests: Option<HashSet<String>>,
+}
+impl ExtractedFieldAttribute {
+    pub(crate) fn get(&self, nest_id: &str) -> Option<&Attribute> {
+        match &self.nests {
+            None => Some(&self.attr),
+            Some(ids) => ids.contains(nest_id).then_some(&self.attr)
+        }
+    }
+}
+impl From<FieldProxyAttribute> for ExtractedFieldAttribute {
+    fn from(proxy_attr: FieldProxyAttribute) -> Self {
+        let nests = proxy_attr.limit.into_inner().nests.map(|ids| ids.into_iter().map(|id| id.value()).collect());
+        Self {
+            attr: extract_passthrough_attr_meta(&proxy_attr.attr),
+            nests,
+        }
     }
 }

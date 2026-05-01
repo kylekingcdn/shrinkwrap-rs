@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 use super::*;
 
 mod derives;
@@ -6,8 +5,10 @@ pub(crate) use derives::Derives;
 mod doc;
 pub(crate) use doc::Doc;
 
+
 // !- Item visibility
 
+#[allow(dead_code)]
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum GenVisibility {
     Public,
@@ -30,19 +31,11 @@ impl ToTokens for GenVisibility {
 #[derive(Debug, Clone)]
 pub struct GenStruct {
     pub vis: GenVisibility,
-    pub ty: Rc<Path>,
-    pub derives: Rc<Derives>,
-    pub attrs: Rc<Vec<TokenStream>>,
+    pub ty: Path,
+    pub derives: Derives,
+    pub attrs: Vec<Attribute>,
     pub doc: Doc,
-    pub fields: Rc<Vec<GenStructField>>,
-}
-impl GenStruct {
-    pub(crate) fn generate(self) -> GenStructOutput {
-        GenStructOutput {
-            out: Rc::new(self.to_token_stream()),
-            source: Rc::new(self),
-        }
-    }
+    pub fields: Vec<GenStructField>,
 }
 impl ToTokens for GenStruct {
     fn to_tokens(&self, tokens: &mut TokenStream) {
@@ -50,7 +43,7 @@ impl ToTokens for GenStruct {
         let Self { vis, ty, attrs, derives, doc, fields, .. } = &self;
 
         // build attribute list
-        let attrs = quote! { #( #[#attrs] )* };
+        let attrs = quote! { #( #attrs )* };
 
         tokens.extend(quote! {
             #[automatically_derived]
@@ -63,14 +56,6 @@ impl ToTokens for GenStruct {
         });
     }
 }
-/// Return type of struct `generate` calls
-pub(crate) struct GenStructOutput {
-    /// Generation source type
-    pub(crate) source: Rc<GenStruct>,
-
-    /// Generated tokens
-    pub(crate) out: Rc<TokenStream>,
-}
 
 // !- Named struct field generator
 
@@ -78,9 +63,9 @@ pub(crate) struct GenStructOutput {
 #[derive(Debug, Clone)]
 pub struct GenStructField {
     pub vis: GenVisibility,
-    pub name: Rc<Ident>,
-    pub ty: Rc<Path>,
-    pub attrs: Rc<Vec<TokenStream>>,
+    pub name: Ident,
+    pub ty: Path,
+    pub attrs: Vec<Attribute>,
     pub doc: Doc,
 }
 impl ToTokens for GenStructField {
@@ -89,7 +74,7 @@ impl ToTokens for GenStructField {
         let Self { vis, name, ty, attrs, doc, .. } = &self;
 
         // build attribute list
-        let attrs = quote! { #( #[#attrs] )* };
+        let attrs = quote! { #( #attrs )* };
 
         tokens.extend(quote! {
             #doc

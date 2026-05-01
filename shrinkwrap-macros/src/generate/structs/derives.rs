@@ -1,7 +1,7 @@
 use super::*;
 
 #[derive(Debug, Clone)]
-pub(crate) struct Derives(Vec<TokenStream>);
+pub(crate) struct Derives(Vec<Path>);
 
 impl ToTokens for Derives {
     fn to_tokens(&self, tokens: &mut TokenStream) {
@@ -12,7 +12,12 @@ impl ToTokens for Derives {
     }
 }
 impl From<Vec<TokenStream>> for Derives {
-    fn from(value: Vec<TokenStream>) -> Self {
-        Self(value)
+    fn from(tokens: Vec<TokenStream>) -> Self {
+        Self(tokens.into_iter().map(|t| parse_quote!(#t)).collect())
+    }
+}
+impl From<Vec<Path>> for Derives {
+    fn from(paths: Vec<Path>) -> Self {
+        Self(paths)
     }
 }

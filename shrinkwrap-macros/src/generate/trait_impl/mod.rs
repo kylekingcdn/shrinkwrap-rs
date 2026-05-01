@@ -1,23 +1,29 @@
-#![allow(dead_code, unused_imports)]
 use super::*;
 
 use quote::format_ident;
 use std::marker::PhantomData;
 
+mod build_nest_value;
+#[allow(unused_imports)]
+pub(crate) use build_nest_value::{BuildNestValueTrait, BuildNestValueVariant};
+
 mod to_wrapped_with;
+#[allow(unused_imports)]
 pub(crate) use to_wrapped_with::{GenToWrappedWith, ToWrappedWithVariant};
 
 mod transform_to_deep_nest;
+#[allow(unused_imports)]
 pub(crate) use transform_to_deep_nest::GenTransformToDeepNest;
 
 mod transform_to_nest;
-pub(crate) use transform_to_nest::{TransformToNestTrait, TransformToNestVariant};
+#[allow(unused_imports)]
+pub(crate) use transform_to_nest::{GenTransformToNest, GenTransformToNestOptional, TransformToNestTrait, TransformToNestVariant};
 
 /// Fallible/infallible variant
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Fallibility {
     Infallible,
-    Fallible { error_type: Rc<Path> },
+    Fallible { error_type: Path },
 }
 impl Fallibility {
     fn fn_call_suffix(&self) -> TokenStream {
@@ -59,8 +65,9 @@ pub(crate) struct TraitFallibility<T: TransformTrait> {
     fallibility: Fallibility,
     transform_trait: PhantomData<T>,
 }
+#[allow(dead_code)]
 impl<T: TransformTrait> TraitFallibility<T> {
-    pub fn new_fallible(error_type: Rc<Path>) -> Self {
+    pub fn new_fallible(error_type: Path) -> Self {
         Self {
             fallibility: Fallibility::Fallible { error_type },
             transform_trait: PhantomData,
@@ -91,7 +98,7 @@ impl<T: TransformTrait> TraitFallibility<T> {
         }
     }
 
-    pub fn error_type(&self) -> Option<Rc<Path>> {
+    pub fn error_type(&self) -> Option<Path> {
         if let Fallibility::Fallible { error_type } = &self.fallibility {
             Some(error_type.clone())
         } else {
