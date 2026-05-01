@@ -16,10 +16,10 @@ default = []
 expand = ["prettyplease"]
 
 [dependencies]
-darling = "0.21.0"
+darling = "0.23.0"
 heck = "0.5.0"
-prettyplease = { version = "0.2.36", optional = true }
-proc-macro-error2 = "2.0.1"
-proc-macro2 = "1.0.95"
-quote = "1.0.40"
-syn = { version = "2.0.104", features = ["extra-traits"] }
+prettyplease = { version = "0.2.37", optional = true }
+proc-macro-error2 = { version = "2.0.1", features = ["nightly"] }
+proc-macro2 = "1.0.106"
+quote = "1.0.45"
+syn = { version = "2.0.117", features = ["extra-traits"] }
