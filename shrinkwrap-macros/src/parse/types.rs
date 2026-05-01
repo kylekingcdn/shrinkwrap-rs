@@ -8,7 +8,7 @@ use heck::AsUpperCamelCase;
 use proc_macro_error2::{OptionExt, abort, emit_error};
 use proc_macro2::{Span, TokenStream};
 use quote::format_ident;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use syn::{Attribute, Ident, LitStr, Meta, Path, Type, parse_quote, spanned::Spanned};
 
 // !- Statics & Consts
@@ -51,8 +51,19 @@ impl DeriveItemOpts {
             nest_errors += nest.validate(nest.span());
         }
 
+        let mut nest_field_errors = 0;
+        if let Data::Struct(data) = &self.data {
+            for field in &data.fields {
+                nest_field_errors += field.validate();
+            }
+        }
+
         let self_errors = self.validate_self();
-        let total_errors = wrapper_errors + extra_errors + nest_errors + self_errors;
+        let total_errors = wrapper_errors
+                           + extra_errors
+                           + nest_errors
+                           + nest_field_errors
+                           + self_errors;
 
         total_errors == 0
     }
@@ -107,6 +118,27 @@ pub(crate) struct DeriveItemFieldOpts {
     /// Nest assignments for field, can be provided multiple times
     #[darling(default, multiple)]
     pub nest: Vec<SpannedValue<StructFieldNestAssignment>>,
+}
+impl DeriveItemFieldOpts {
+    fn validate(&self) -> usize {
+        let mut errors = 0;
+
+        // check if nest ID has been assigned multiple times
+        let mut ids_visited: HashMap<String, Span> = HashMap::new();
+        for nest in &self.nest {
+            let nest_id = nest.id.as_str();
+            if let Some(existing_span) = ids_visited.get(nest_id) {
+                emit_error!(existing_span, "Nest ID `{}` first assigned here", nest_id);
+                let field_name = self.ident.clone().unwrap().to_string();
+                emit_error!(nest.span(), "Nest with ID `{}` is assigned to field `{}` multiple times.", nest_id, field_name);
+                errors += 1;
+            }
+
+            ids_visited.insert(nest_id.to_string(), nest.span());
+        }
+
+        errors
+    }
 }
 
 // ! Meta types for struct fields
