@@ -198,9 +198,9 @@ fn gen_nest(state: &State, nest_opts: &NestOpts) -> NestData {
     let source_ident = state.nest_source_ident(nest_id_str);
     let optional = state.global.all_optional.is_present() || nest_opts.optional();
 
-    let derive_to_nest = nest_opts.derive_to_nest.as_ref().map(|src_derive_to_nest|
+    let derive_to_nest = nest_opts.derive_to_nest.is_some().then(||
         NestAutoDeriveToNest {
-            nest_value: src_derive_to_nest.value.clone(),
+            // nest_value: src_derive_to_nest.value.clone(),
             options_field_if_optional: optional.then(|| nest_opts.derive_to_nest_options_field_name()).flatten(),
         }
     );

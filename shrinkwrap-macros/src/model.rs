@@ -262,7 +262,9 @@ impl RecursiveToTokens for NestData {
 #[derive(Debug, Clone)]
 pub(crate) struct NestAutoDeriveToNest {
     pub(crate) options_field_if_optional: Option<Ident>,
-    pub(crate) nest_value: Path,
+
+    // - disabled, gets pulled in and handled by resolve_field_type()
+    // pub(crate) nest_value: Path,
 }
 
 #[derive(Debug, Clone)]
