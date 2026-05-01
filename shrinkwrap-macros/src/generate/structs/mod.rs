@@ -29,7 +29,7 @@ impl ToTokens for GenVisibility {
 
 /// Generator for a named struct
 #[derive(Debug, Clone)]
-pub struct GenStruct {
+pub(crate) struct GenStruct {
     pub vis: GenVisibility,
     pub ty: Path,
     pub derives: Derives,
@@ -61,7 +61,7 @@ impl ToTokens for GenStruct {
 
 /// Generator for a single field within a named struct
 #[derive(Debug, Clone)]
-pub struct GenStructField {
+pub(crate) struct GenStructField {
     pub vis: GenVisibility,
     pub name: Ident,
     pub ty: Path,

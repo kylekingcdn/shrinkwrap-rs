@@ -555,7 +555,7 @@ impl NestOpts {
 
 /// Configuration for automatically deriving `TransformToNest`/`TryTransformToNest`.
 #[derive(Debug, Clone, FromMeta)]
-pub struct DeriveToNest {
+pub(crate) struct DeriveToNest {
     /// Sets the resulting value type associated with the genetated fields in
     /// this nest.  This type can be reused in other `shrinkwrap::Wrap` impl'd
     /// structs (and even in other nest under the same wrapper - typically only

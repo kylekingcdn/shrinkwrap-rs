@@ -20,7 +20,7 @@ pub(crate) struct State {
 
 // FIXME: use Rc's
 impl State {
-    pub fn new(
+    pub(crate) fn new(
         global: GlobalOpts,
         wrapper: WrapperOpts,
         extra: ExtraOpts,

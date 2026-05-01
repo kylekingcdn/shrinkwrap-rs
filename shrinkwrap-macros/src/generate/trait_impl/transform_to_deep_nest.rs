@@ -4,7 +4,7 @@ use super::*;
 
 /// Generates a [`shrinkwrap::transform_to_nest`] trait impl into the wrapper of a layered nest
 #[derive(Debug, Clone)]
-pub struct GenTransformToDeepNest {
+pub(crate) struct GenTransformToDeepNest {
     /// The trait variant
     pub(crate) variant: TransformToNestVariant,
 

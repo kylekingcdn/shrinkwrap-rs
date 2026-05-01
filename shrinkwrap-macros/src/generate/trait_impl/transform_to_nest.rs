@@ -15,7 +15,7 @@ pub(crate) type TransformToNestVariant = TraitFallibility<TransformToNestTrait>;
 // !- GenTransformToNestOptional
 
 #[derive(Debug, Clone)]
-pub struct GenTransformToNestOptional {
+pub(crate) struct GenTransformToNestOptional {
     /// Name of the field on [`Transform::Options`] used to control nest inclusion
     pub(crate) options_field_name: Ident,
 }
@@ -24,7 +24,7 @@ pub struct GenTransformToNestOptional {
 
 /// Generates a [`shrinkwrap::transform_to_nest`] trait impl into the wrapper of a layered nest
 #[derive(Debug, Clone)]
-pub struct GenTransformToNest {
+pub(crate) struct GenTransformToNest {
     /// The trait variant
     pub(crate) variant: TransformToNestVariant,
 

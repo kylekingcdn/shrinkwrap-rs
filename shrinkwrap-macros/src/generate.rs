@@ -35,7 +35,7 @@ use trait_impl::{
     GenToWrappedWith, GenTransformToDeepNest, GenTransformToNest, GenTransformToNestOptional
 };
 
-pub fn generate(derive_opts: DeriveItemOpts, tokens: &mut TokenStream) {
+pub(crate) fn generate(derive_opts: DeriveItemOpts, tokens: &mut TokenStream) {
     // destructure input opts
     let DeriveItemOpts {
         ident: root_ident,
