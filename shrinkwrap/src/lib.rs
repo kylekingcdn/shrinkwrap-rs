@@ -9,7 +9,7 @@ mod wrap;
 
 pub use crate::{
     build_nest_value::BuildNestValue,
-    nest::{NestGroup, NestValueType},
+    nest::NestValueType,
     to_nest::{ToNestWith, TransformToNest},
     transform::Transform,
     try_build_nest_value::TryBuildNestValue,

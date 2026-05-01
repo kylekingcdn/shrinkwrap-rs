@@ -508,14 +508,6 @@ impl NestOpts {
 /// Configuration for automatically deriving `TransformToNest`/`TryTransformToNest`.
 #[derive(Debug, Clone, FromMeta)]
 pub struct DeriveToNest {
-    /// Sets the user-defined type representing this nest variation.
-    /// This type can be reused in other `shrinkwrap::Wrap` impl'd structs
-    /// (typically 1 Nest type impl per unique nest ID).
-    ///
-    /// Type must have an impl for `NestGroup` where the `NestGroup::Value`
-    /// associated type matches the `value` attribute provided here.
-    pub nest: Path,
-
     /// Sets the resulting value type associated with the genetated fields in
     /// this nest.  This type can be reused in other `shrinkwrap::Wrap` impl'd
     /// structs (and even in other nest under the same wrapper - typically only

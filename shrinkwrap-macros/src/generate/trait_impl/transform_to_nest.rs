@@ -47,9 +47,6 @@ pub struct GenTransformToNest {
     /// Struct type for the nest.
     pub(crate) nest_struct_ident: Ident,
 
-    /// Ident of the user-defined nest variant.
-    pub(crate) nest_variant_ident: Path,
-
     /// Path of the user-defined nest value type.
     pub(crate) nest_value_type: Path,
 

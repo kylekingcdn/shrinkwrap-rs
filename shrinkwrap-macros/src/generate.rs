@@ -202,7 +202,6 @@ fn gen_nest(state: &State, nest_opts: &NestOpts) -> NestData {
 
     let derive_to_nest = nest_opts.derive_to_nest.as_ref().map(|src_derive_to_nest|
         NestAutoDeriveToNest {
-            nest_group: src_derive_to_nest.nest.clone(),
             nest_value: src_derive_to_nest.value.clone(),
             options_field_if_optional: optional.then(|| nest_opts.derive_to_nest_options_field_name()).flatten(),
         }
@@ -358,7 +357,6 @@ fn gen_transform_to_nest_node(
             nest_fields: nest_data.fields.iter().map(|f| f.into()).collect(),
             source_field_types: nest_data.source_types(),
             nest_struct_ident: nest_data.ident.clone(),
-            nest_variant_ident: derive_to_nest.nest_group.clone(),
             nest_value_type: derive_to_nest.nest_value.clone(),
             optional: derive_to_nest.options_field_if_optional.clone().map(|options_field_name | GenTransformToNestOptional { options_field_name }),
         };
