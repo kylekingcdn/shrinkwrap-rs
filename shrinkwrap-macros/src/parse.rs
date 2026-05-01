@@ -1,8 +1,8 @@
 use darling::util::SpannedValue;
 use proc_macro_error2::{OptionExt, abort, emit_error};
 use proc_macro2::Span;
-use std::collections::{HashSet, HashMap};
-use syn::{Attribute, Ident, Type};
+use std::collections::HashMap;
+use syn::{Attribute, Ident, Path, Type};
 
 pub mod types;
 use types::{
@@ -12,6 +12,7 @@ use types::{
     FieldProxyAttribute,
     NestOpts,
     StructClass,
+    StructFieldNestAssignment,
     StructProxyAttribute,
 };
 
@@ -72,6 +73,9 @@ pub(crate) struct FieldResolver {
 
     /// Nest ID -> field name ident
     nest_fields: HashMap<String, Vec<Ident>>,
+
+    /// (Nest ID, field name ident) -> field type **override** for nest
+    nest_field_type: HashMap<(String, Ident), Path>,
 }
 impl FieldResolver {
     pub(crate) fn new(fields: Vec<ParsedField>) -> Self {
@@ -79,6 +83,7 @@ impl FieldResolver {
             origin_fields: Vec::with_capacity(fields.len()),
             field_map: HashMap::with_capacity(fields.len()),
             nest_fields: HashMap::with_capacity(5),
+            nest_field_type: HashMap::with_capacity(2*fields.len()),
         };
         for field in fields {
             resolver.insert_field(field);
@@ -98,7 +103,7 @@ impl FieldResolver {
             let parsed_field = ParsedField {
                 name: field.ident.unwrap_or_else(|| abort!(Span::call_site(), "Only named structs are supported")),
                 ty: field.ty,
-                nest_ids: field.nests.iter().map(|id| id.value()).collect(),
+                nest_assignments: field.nest,
                 attrs,
             };
             fields.push(parsed_field);
@@ -108,8 +113,14 @@ impl FieldResolver {
 
     pub(crate) fn insert_field(&mut self, field: ParsedField) {
         self.field_map.insert(field.name.clone(), field.clone());
-        for nest_id in &field.nest_ids {
-            self.nest_fields.entry(nest_id.clone()).or_default().push(field.name.clone());
+        for nest_assignment in &field.nest_assignments {
+            self.nest_fields.entry(nest_assignment.id.clone().into_inner()).or_default().push(field.name.clone());
+            let field_type_pair = (nest_assignment.id.clone().into_inner(), field.name.clone());
+
+            // add type override to nest field type map
+            if let Some(custom_type) = &nest_assignment.ty {
+                self.nest_field_type.insert(field_type_pair, custom_type.clone());
+            }
         }
         self.origin_fields.push(field.name.clone());
     }
@@ -134,6 +145,10 @@ impl FieldResolver {
         }
 
         !has_error
+    }
+
+    pub(crate) fn nest_field_type_override(&self, nest_id: String, field_name: Ident) -> Option<&Path> {
+        self.nest_field_type.get(&(nest_id, field_name))
     }
 
     pub(crate) fn nest_fields(&self, nest_id: &str) -> Vec<&ParsedField> {
@@ -329,6 +344,8 @@ pub(crate) struct ParsedField {
     pub attrs: Vec<ExtractedFieldAttribute>,
 
     /// Nest IDs which the field will be added to
-    // FIXME: remove
-    pub nest_ids: HashSet<String>,
+    // pub nest_ids: HashSet<String>,
+
+    /// List of ID + value type overrides
+    pub nest_assignments: Vec<SpannedValue<StructFieldNestAssignment>>,
 }

@@ -63,9 +63,10 @@ impl DeriveItemOpts {
         // validate field nest id's exist
         if let Data::Struct(data) = &self.data {
             for field in &data.fields {
-                for nest in &field.nests {
-                    if !all_nest_ids.contains(&nest.value()) {
-                        emit_error!(nest, "Nest `{}` is not defined", nest.value());
+                for nest in &field.nest {
+                    let nest_id = nest.id.clone().into_inner();
+                    if !all_nest_ids.contains(&nest_id) {
+                        emit_error!(nest.id.span(), "Nest `{}` is not defined", nest_id);
                         errors += 1;
                     }
                 }
@@ -103,8 +104,25 @@ pub(crate) struct DeriveItemFieldOpts {
     pub ty: Type,
     pub attrs: Vec<Attribute>,
 
-    #[darling(default)]
-    pub nests: NestIdSelection,
+    /// Nest assignments for field, can be provided multiple times
+    #[darling(default, multiple)]
+    pub nest: Vec<SpannedValue<StructFieldNestAssignment>>,
+}
+
+// ! Meta types for struct fields
+
+#[derive(Debug, Clone, FromMeta)]
+pub(crate) struct StructFieldNestAssignment {
+    /// ID of nest to assign the field to
+    pub id: SpannedValue<String>,
+
+    /// Override the field's type for this nest specifically.
+    ///
+    /// **Optional**, defaults to type provided in `nest` definition attrs,
+    /// one of:
+    /// - `#[shrinkwrap(nest(.., `**`field_type = X`**`))]`
+    /// - `#[shrinkwrap(nest(.., derive_to_nest(`**`value = X`**`))]`
+    pub ty: Option<Path>
 }
 
 // !- Container option structs

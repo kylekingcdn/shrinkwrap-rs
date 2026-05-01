@@ -218,13 +218,20 @@ fn gen_nest(state: &State, nest_opts: &NestOpts) -> NestData {
 fn gen_nest_fields(state: &State, nest_opts: &NestOpts) -> Vec<NestDataField> {
     let nest_id_str = nest_opts.id_str();
     let filtered_origin_fields = state.field_resolver.nest_fields(nest_id_str);
-    let field_type = nest_opts.resolve_field_type();
-    let parent_nest_field_type: Option<Type> = nest_opts.chain_from.as_ref().map(|parent_id| {
-        let path = state.nest_hierarchy.get_nest_opts(parent_id.to_string().as_str()).resolve_field_type().clone();
-        parse_quote! { #path }
-    });
+    let default_field_type = nest_opts.resolve_field_type();
+
     let mut out = Vec::new();
     for field in filtered_origin_fields {
+        let field_type = state.field_resolver.nest_field_type_override(nest_id_str.to_string(), field.name.clone()).unwrap_or(default_field_type);
+        let parent_nest_field_type: Option<Type> = nest_opts.chain_from.as_ref().map(|parent_id| {
+            let path = state.field_resolver.nest_field_type_override(parent_id.to_string(), field.name.clone()).unwrap_or_else(|| {
+               // fallback to default
+               state.nest_hierarchy.get_nest_opts(parent_id.to_string().as_str()).resolve_field_type()
+            });
+
+            parse_quote! { #path }
+        });
+
         let attrs = state.field_resolver.attrs(nest_id_str, &field.name);
         out.push(NestDataField {
             name: field.name.clone(),
@@ -353,9 +360,8 @@ fn gen_transform_to_nest_node(
             transform_generic_bounds: transform_bounds.clone(),
             data_ident: source_ident.clone(),
             nest_fields: nest_data.fields.iter().map(|f| f.into()).collect(),
-            source_field_types: nest_data.source_types(),
+            field_source_type_pairings: nest_data.nest_source_type_pairings(),
             nest_struct_ident: nest_data.ident.clone(),
-            nest_value_type: derive_to_nest.nest_value.clone(),
             optional: derive_to_nest.options_field_if_optional.clone().map(|options_field_name | GenTransformToNestOptional { options_field_name }),
         };
         transform_to_nest.to_tokens(tokens);

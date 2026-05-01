@@ -40,15 +40,12 @@ pub struct GenTransformToNest {
     /// Fields included in the nest
     pub(crate) nest_fields: Vec<GenStructField>,
 
-    /// List of source field types (only fields that are actually included in this nest).
+    /// List of (nest_type, source field) types (only fields that are actually included in this nest).
     /// Must already be de-duplicated.
-    pub(crate) source_field_types: Vec<Type>,
+    pub(crate) field_source_type_pairings: Vec<(Path, Type)>,
 
     /// Struct type for the nest.
     pub(crate) nest_struct_ident: Ident,
-
-    /// Path of the user-defined nest value type.
-    pub(crate) nest_value_type: Path,
 
     /// Whether or not the destination nest is optional, inlcudes config for optional handling
     pub(crate) optional: Option<GenTransformToNestOptional>,
@@ -60,16 +57,14 @@ impl GenTransformToNest {
     }
 
     fn trait_bounds(&self) -> TokenStream {
-        let field_value_type = &self.nest_value_type;
-
         let mut tokens = TokenStream::default();
-        for field_type in &self.source_field_types {
+        for (field_value_type, source_type) in &self.field_source_type_pairings {
             tokens.extend(match &self.variant.fallibility {
                 Fallibility::Infallible => quote! {
-                    Self: ::shrinkwrap::BuildNestValue<#field_type, #field_value_type>,
+                    Self: ::shrinkwrap::BuildNestValue<#source_type, #field_value_type>,
                 },
                 Fallibility::Fallible { error_type } => quote! {
-                    Self: ::shrinkwrap::TryBuildNestValue<#field_type, #field_value_type, Error = #error_type>,
+                    Self: ::shrinkwrap::TryBuildNestValue<#source_type, #field_value_type, Error = #error_type>,
                 }
             });
         }

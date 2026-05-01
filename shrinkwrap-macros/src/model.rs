@@ -235,14 +235,16 @@ pub(crate) struct NestData {
     pub derive_to_nest: Option<NestAutoDeriveToNest>,
 }
 impl NestData {
-    pub(crate) fn source_types(&self) -> Vec<Type> {
-        let mut tys = Vec::new();
+    /// Vec<(nest_field_type, source_field_type)>
+    pub(crate) fn nest_source_type_pairings(&self) -> Vec<(Path, Type)> {
+        let mut pairs = Vec::new();
         for field in &self.fields {
-            if !tys.contains(&field.source_type) {
-                tys.push(field.source_type.clone())
+            let pair = (field.ty.clone(), field.source_type.clone());
+            if !pairs.contains(&pair) {
+                pairs.push(pair)
             }
         }
-        tys
+        pairs
     }
 }
 impl ToTokens for NestData {
