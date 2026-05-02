@@ -1,6 +1,6 @@
 /// Marker trait for a transform impl
 ///
-/// Additionally provides the type for the options parameter used in [`TransformToNest`] and [`ToNestWith`]
+/// Additionally provides the type for the options parameter used in [`TransformToNest`](crate::TransformToNest) and [`ToNestWith`](crate::ToNestWith)
 ///
 /// ## Example impl
 ///

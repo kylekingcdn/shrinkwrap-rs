@@ -3,6 +3,9 @@ use crate::{
     transform::Transform,
 };
 
+/// Fallible version of [`BuildNestValue`](crate::BuildNestValue)
+///
+/// See [`BuildNestValue`](crate::BuildNestValue) for more information
 pub trait TryBuildNestValue<T, V>: Transform
 where
     V: NestValueType

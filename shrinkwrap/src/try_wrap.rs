@@ -3,9 +3,9 @@ use std::fmt::Debug;
 
 use crate::transform::Transform;
 
-/// `TryToWrappedWith` is automatically implemented for data structs when all top-level nests have a [`TransformToNest`] impl on each nest type within the group. All impls must be for the same transform type.
+/// `TryToWrappedWith` is automatically implemented for data structs when all top-level nests have a [`TryTransformToNest`](crate::TryTransformToNest) impl on each nest type within the group. All impls must be for the same transform type.
 ///
-/// Furthermore, any nests which are deeply nested require a [`TransformToNest`] converting from their respective data source (the parent nest).
+/// Furthermore, any nests which are deeply nested require a [`TryTransformToNest`](crate::TryTransformToNest) converting from their respective data source (the parent nest).
 pub trait TryToWrappedWith<T>: Debug + Clone + Serialize
 where
     T: Transform,
@@ -18,9 +18,9 @@ where
 
 /// Allows for converting a data struct into a wrapper.
 ///
-/// Automatically implemented across types that provide `TryToWrappedWith`.
+/// Automatically implemented across types that provide [`TryToWrappedWith`](crate::TryToWrappedWith).
 ///
-/// The call is initiated from the wrapper Type itself. Aside from that, it is identical to [`try_to_wrapped_with`].
+/// The call is initiated from the wrapper Type itself. Aside from that, it is identical to [`try_to_wrapped_with`](crate::TryToWrappedWith::try_to_wrapped_with).
 pub trait TryWrapDataWith<D, T>: Sized
 where
     T: Transform,
