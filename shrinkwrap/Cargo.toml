@@ -16,4 +16,4 @@ expand = ["shrinkwrap-macros/expand"]
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
-shrinkwrap-macros = { version = "0.5.0", path = "../shrinkwrap-macros" }
+shrinkwrap-macros = { version = "0.6.0", path = "../shrinkwrap-macros" }
