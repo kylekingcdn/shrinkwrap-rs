@@ -1,5 +1,5 @@
 [package]
-name = "example-readme"
+name = "example-auto-transform-to-nest-impls"
 version = "0.1.0"
 publish = false
 edition.workspace = true
@@ -16,4 +16,3 @@ serde_json = { workspace = true }
 schemars = { workspace = true }
 
 chrono = { version = "0.4.41", features = ["serde"] }
-uuid = { version = "1.17.0", features = ["serde", "v4"] }

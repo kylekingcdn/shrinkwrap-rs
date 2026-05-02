@@ -11,9 +11,9 @@ use uuid::Uuid;
 pub struct UserResponse {
     id: Uuid,
     username: String,
-    #[shrinkwrap(nests("text"))]
+    #[shrinkwrap(nest(id = "text"))]
     balance: i64, // balance in USD cents
-    #[shrinkwrap(nests("text"))]
+    #[shrinkwrap(nest(id = "text"))]
     last_login: DateTime<Utc>,
 }
 // The following structs have been created automatically:

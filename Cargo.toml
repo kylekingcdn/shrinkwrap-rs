@@ -3,10 +3,13 @@ resolver = "3"
 members = [
     "shrinkwrap",
     "shrinkwrap-macros",
-    "examples/wrap-derive",
-    # "examples/wrap-derive-fallible",
-    # "examples/minimal",
-    # "examples/readme",
+    "examples/auto-transform-to-nest-impls",
+    "examples/infallible",
+    "examples/infallible-optional",
+    "examples/fallible",
+    "examples/fallible-optional",
+    "examples/minimal",
+    "examples/readme",
 ]
 
 [workspace.package]
