@@ -119,9 +119,9 @@ To accomplish the example from the [Overview section](#overview):
    pub struct UserResponse {                             //  + specify the return type for all fields within the nest
        id: Uuid,
        username: String,
-       #[shrinkwrap(nests("text"))] // fields are opt-in and must be selected for each nest
+       #[shrinkwrap(nest(id = "text"))] // fields are opt-in and must be selected for each nest
        balance: i64,
-       #[shrinkwrap(nests("text"))]
+       #[shrinkwrap(nest(id = "text"))]
        last_login: DateTime<Utc>,
    }
    ```
