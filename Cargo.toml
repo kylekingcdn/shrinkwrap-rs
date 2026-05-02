@@ -17,7 +17,6 @@ version = "0.6.0"
 edition = "2024"
 categories = ["data-structures", "development-tools", "value-formatting"]
 repository = "https://github.com/kylekingcdn/shrinkwrap-rs"
-readme = "README.md"
 license = "MIT"
 
 [workspace.dependencies]

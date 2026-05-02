@@ -1,11 +1,11 @@
 [package]
 name = "shrinkwrap-macros"
 description = "Macros for shrinkwrap"
+readme = "README.md"
 version.workspace = true
 edition.workspace = true
 categories.workspace = true
 repository.workspace = true
-readme.workspace = true
 license.workspace = true
 
 [lib]

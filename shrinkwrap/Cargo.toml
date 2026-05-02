@@ -1,11 +1,11 @@
 [package]
 name = "shrinkwrap"
 description = "Automates the wrapping and nesting of additional variations for some or all of a struct's fields."
+readme = "README.md"
 version.workspace = true
 edition.workspace = true
 categories.workspace = true
 repository.workspace = true
-readme.workspace = true
 license.workspace = true
 
 [lib]
